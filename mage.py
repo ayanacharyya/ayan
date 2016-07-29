@@ -26,6 +26,9 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import InterpolatedUnivariateSpline as extrapolate
 from scipy import asarray as ar,exp
 
+# added a comment for testing
+foobar_variable = False
+
 #-------Function for making new linelist files. DO NOT DELETE--------------------------
 def makelist(linelist):    
     target_line_labels_to_fit = [
