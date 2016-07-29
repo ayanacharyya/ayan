@@ -2,7 +2,7 @@ import sys
 sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools')
 sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools/Contrib')
 import jrr
-import splot as s
+import splot_util as s
 import numpy as np
 import pandas as pd
 pd.set_option('display.max_rows', 50)
