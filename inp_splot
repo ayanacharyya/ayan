@@ -1,0 +1,11 @@
+#input file for splot.py. parameters are as explained in corresponding comments.  the SPACES are important!!!
+#-----------------------
+inp = /Users/acharyya/UVdata/lisaUVfits1_cont_norm_inrange(1743.18374679,2515.32376139).txt #/Users/acharyya/UVdata/rcs0327-knotEfits.txt #name of text file whose 1st col is wavelength & 2nd is flux
+choice = 2 # choice is 1 for fitting gaussian and 2 for fitting continuum
+wmin = 1500 #  
+wmax = -1 # limits (if any) of rest frame wavelength range which is to be be plotted. To plot whole spectrum, set one/both of these limits to any -ve value as necessary.
+z = 0. #1.703318 # redshift to be used to scale the wavelength
+ll = /Users/acharyya/UVdata/line_list #
+
+
+#------------------------
