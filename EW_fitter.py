@@ -1,6 +1,6 @@
 ''' Equivalent width and flux fitter.  Given a spectrum, a continuum, a linelist, and a redshift,
 fit a bunch of emission or absorption lines.
-Started july 2016, Jane Rigby and Ayan Acharyya
+Started july 2016, Jane Rigby and Ayan Acharyya.  This is a lot of hard, good work.
 '''
 import mage as m
 import sys
