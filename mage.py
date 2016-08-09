@@ -93,12 +93,12 @@ def fit_autocont(sp_orig, zz_sys, line_path, filename):
     jrr.mage.auto_fit_cont(sp_orig, LL, zz_sys)  # Automatically fit continuum.  results written to sp.fnu_autocont, sp.flam_autocont.
 
 #-------------Function to get the list of lines to fit--------------------------
-def getlist(zz_dic, zz_err_dic):
+def getlist(listname, zz_dic, zz_err_dic):
     '''
     NOTE: Use labframe.shortlinelist to include most lines except a few and
     Use labframe.shortlinelist_com to exclude most lines  and fit a few
     '''
-    LL = pd.read_table('labframe.shortlinelist_com', delim_whitespace=True, comment="#") # Load different, shorter linelist to fit lines
+    LL = pd.read_table(listname, delim_whitespace=True, comment="#") # Load different, shorter linelist to fit lines
     LL = LL.sort('restwave')
     LL.restwave = LL['restwave'].astype(np.float64)
     line_full = pd.DataFrame(columns=['zz','zz_err','type'])
@@ -137,7 +137,6 @@ def calc_mad(sp, resoln, nn):
     plt.xlim(np.min(bin_centers),np.max(bin_centers))
     plt.ylim(np.array([-0.1,1.])*1e-28)
     plt.show(block=False)
-    return sp
 
 #------------Function to calculate error spectrum-----------------
 def calc_schneider_EW(sp, resoln, plotit = False):
@@ -179,8 +178,6 @@ def calc_schneider_EW(sp, resoln, plotit = False):
         plt.xlim(4200,4600)
         plt.ylim(-1,3)
         plt.show(block=False)
-    #---------------------------------------------
-    return sp
     
 #-------------Fucntion for updating popt, pcov when some parameters are fixed----------------------------
 #-------------so that eventually update_dataframe() gets popt, pcov of usual shape----------------------------
@@ -273,7 +270,6 @@ def update_dataframe(sp, label, l, med_bin_flux, mad_bin_flux, df, resoln, dreso
         ("%.4e" % med_bin_flux),("%.4e" % mad_bin_flux), np.nan, ("%.4f" % EW_3sig_lim),\
         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
     df.loc[len(df)] = row
-    return df
     
 #-------Function to plot the gaussians-------------
 def plot_gaus(sptemp, popt, cen, tot_nu, detection=True):
@@ -314,7 +310,7 @@ def check_3sig_det(sptemp, l, popt, resoln, args=None):
         
 #-------Function to calculate upper limit on detection------
 def calc_detec_lim(sp_orig, line, resoln, nbin, args=None):
-    dlambda = 0.5*gs2f/resoln
+    dlambda = 2.*gs2f/resoln
     leftlim = line.wave.values[0]*(1.-5./resoln)*(1.-dlambda)
     rightlim = line.wave.values[-1]*(1.+5./resoln)*(1.+dlambda)
     l_arr = np.concatenate((np.linspace(leftlim*(1. - (nbin-1)*dlambda), leftlim, nbin),np.linspace(rightlim, rightlim*(1. + (nbin-1)*dlambda), nbin)))
@@ -363,31 +359,19 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
     global v_maxwidth, line_type_dic
     line_type_dic = {'EMISSION':1., 'FINESTR':1., 'PHOTOSPHERE': -1., 'ISM':-1., 'WIND':-1.}
     if args.fcen is not None:
-        fix_cen = args.fcen
+        fix_cen = int(args.fcen)
     else:
         fix_cen = 0
     if args.fcon is not None:
-        fix_con = args.fcon
+        fix_con = int(args.fcon)
     else:
         fix_cont = 1
-    if args.dx is not None:
-        dx = args.dx
-    else:
-        dx = 310.
-    if args.only is not None:
-       display_only_success = args.only
-    else:
-        display_only_success = 1
     if args.vmax is not None:
-        v_maxwidth = args.vmax
+        v_maxwidth = float(args.vmax)
     else:
-        v_maxwidth = 300 #in km/s, to set the maximum FWHM that can be fit as a line
-    if args.frame is not None:
-        frame = args.frame
-    else:
-        frame = None
+        v_maxwidth = 300. #in km/s, to set the maximum FWHM that can be fit as a line
     if args.nbin is not None:
-        nbin = args.nbin
+        nbin = int(args.nbin)
     else:
         nbin = 5
     #-----------
@@ -420,9 +404,8 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
                 for xx in range(0,c):
                     ind = line.index.values[(kk-1) - c + 1 + xx]
                     #det_3sig, wt_mn, er_wt_mn = check_3sig_det(sp2, line.loc[ind], popt[4*xx:4*(xx+1)], resoln, args=args) # check if 3 sigma detection
-                    det_3sig = True
-                    df = update_dataframe(sp2, label, line.loc[ind], med_bin_flux, mad_bin_flux, df, resoln, dresoln, popt= popt[4*xx:4*(xx+1)], pcov= pcov[4*xx:4*(xx+1),4*xx:4*(xx+1)], detection=det_3sig)
-                    tot_nu = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, tot_nu, detection=det_3sig)
+                    update_dataframe(sp2, label, line.loc[ind], med_bin_flux, mad_bin_flux, df, resoln, dresoln, popt= popt[4*xx:4*(xx+1)], pcov= pcov[4*xx:4*(xx+1),4*xx:4*(xx+1)], detection=True)
+                    tot_nu = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, tot_nu, detection=True)
                 if c > 1:
                         plt.plot(sp2.wave, np.subtract(tot_nu,(c-1.)*jrr.spec.flam2fnu(sp2.wave, np.multiply(popt[0],sp2.flam_autocont))), color='green', linewidth=2)
                 if not args.silent:
@@ -432,7 +415,7 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
                     ind = line.index.values[(kk-1) - c + 1 + xx]
                     plt.axvline(line.loc[ind].wave, c='k', lw=1)
                     #wt_mn, er_wt_mn = calc_1sig_err(sp2, line.loc[ind].wave, resoln)
-                    df = update_dataframe(sp2, label, line.loc[ind], med_bin_flux, mad_bin_flux, df, resoln, dresoln, detection=False)
+                    update_dataframe(sp2, label, line.loc[ind], med_bin_flux, mad_bin_flux, df, resoln, dresoln, detection=False)
                 if not args.silent:
                     print 'Could not fit these', c, 'lines.'                
             first, last = center2, center2
