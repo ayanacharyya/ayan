@@ -1,3 +1,8 @@
+'''
+Collection of python routines by Ayan Acharyya applicable on mage sample, mainly to be used by the code EW_fitter.py
+to fit gaussian profiles to spectral lines.
+Started July 2016
+'''
 import sys
 sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools')
 sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools/Contrib')
@@ -29,7 +34,7 @@ from scipy import asarray as ar,exp
 # added a comment for testing
 foobar_variable = False
 
-#-------Function for making new linelist files. DO NOT DELETE--------------------------
+#-------Function for making new linelist files. DO NOT DELETE even if unused--------------------------
 def makelist(linelist):    
     target_line_labels_to_fit = [
      'C III 1247', \
@@ -116,7 +121,7 @@ def getlist(listname, zz_dic, zz_err_dic):
     line_full.wave = line_full.wave.astype(np.float64)
     return line_full #pandas dataframe
 
-#------------Function to calculate error spectrum-----------------
+#------------Function to calculate MAD error spectrum for entire spectrum and add column to dataframe-----------------
 def calc_mad(sp, resoln, nn):
     start = np.min(sp.wave)
     bin_edges = [start]
@@ -141,7 +146,7 @@ def calc_mad(sp, resoln, nn):
     plt.ylim(np.array([-0.1,1.])*1e-28)
     plt.show(block=False)
 
-#------------Function to calculate error spectrum-----------------
+#------------Function to calculate Schneider EW and errors at every point in spectrum and add columns to dataframe-----------------
 def calc_schneider_EW(sp, resoln, plotit = False):
     EW, sig, sig_int = [],[],[]
     w = sp.wave.values
