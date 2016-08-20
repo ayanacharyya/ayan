@@ -1,0 +1,5 @@
+This folder contains the python routines by Ayan Acharyya, applicable on MagE samples, for various useful tasks.
+
+splot_utils.py : contains mostly functions used for interactive line and/or continuum fitting
+inp_splot      : contains input parameters used by splot_utils.py, Warning: most of them are obsolete now
+mage.py        : contains functions used by EW_fitter.py, which performs automated line fitting on the MagE spectra
