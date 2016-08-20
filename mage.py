@@ -31,11 +31,10 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import InterpolatedUnivariateSpline as extrapolate
 from scipy import asarray as ar,exp
 
-# added a comment for testing
-foobar_variable = False
-
 #-------Function for making new linelist files. DO NOT DELETE even if unused--------------------------
-def makelist(linelist):    
+def makelist(linelist):
+    #in the following list, keep (comment out rest) all the lines you want to be extracted from Rigby's .linelist files
+    #into our new labframe.shortlinelist files
     target_line_labels_to_fit = [
      'C III 1247', \
      'Si III 1294', 'Si III 1296', 'C III 1296', 'Si III 1298', 'O I 1302', 'Si II 1304', \
@@ -89,10 +88,13 @@ def makelist(linelist):
 #-----------Function to flag skylines, by JRR----------------------
 def flag_skylines(sp) :
     # Mask skylines [O I] 5577\AA\ and [O I]~6300\AA,
-    skyline = (5577., 6300.)
-    skywidth = 7.0  # flag spectrum +- skywidth of the skyline, skywidth different from JRR
-    for thisline in skyline:
-        sp.badmask.loc[sp['wave'].between(thisline-skywidth, thisline+skywidth)] = True 
+    skyline = np.array([5577., 6300.])
+    prev_skywidth = 17.0 #used by jrr.mage.flag_skylines
+    skywidth = skyline*250./3e5 # flag spectrum +- skywidth of the skyline, skywidth different from JRR
+                                # masking vel = 250 km/s on either side of skylines
+    for pp in range(len(skyline)):
+        sp.badmask.loc[sp['wave'].between(skyline[pp]-prev_skywidth, skyline[pp]+prev_skywidth)] = False #undo jrr.mage masking
+        sp.badmask.loc[sp['wave'].between(skyline[pp]-skywidth[pp], skyline[pp]+skywidth[pp])] = True #redo new masking
 
 #-------------Function to fit autocont using jrr.mage.auto_fit.cont------------------
 def fit_autocont(sp_orig, zz_sys, line_path, filename):
@@ -148,12 +150,14 @@ def calc_mad(sp, resoln, nn):
 
 #------------Function to calculate Schneider EW and errors at every point in spectrum and add columns to dataframe-----------------
 def calc_schneider_EW(sp, resoln, plotit = False):
-    EW, sig, sig_int = [],[],[]
+    EW, sig, sig_int, signorm_int = [],[],[], []
     w = sp.wave.values
     f = (sp.flam/sp.flam_autocont).values
-    u = (sp.flam_u/sp.flam_autocont).values
-    func_u = interp1d(w, u, kind='linear')
-    ui = func_u(w)
+    #--normalised error spectrum for EW limit----
+    unorm = (sp.flam_u/sp.flam_autocont).values
+    func_u = interp1d(w, unorm, kind='linear')
+    uinorm = func_u(w)
+    #---------------------------
     disp = np.concatenate(([np.diff(w)[0]],np.diff(w)))
     n = len(w)
     lim = 3.
@@ -162,29 +166,29 @@ def calc_schneider_EW(sp, resoln, plotit = False):
         b = w[ii]
         c = w[ii]*gf2s/resoln       
         j0 = int(np.round(N*c/disp[ii]))
-        #a = 1./np.sum([exp(-((w[ii-j0+j]-w[ii])**2)/(2*c**2)) for j in range(2*j0+1)])
-        #P = [a*exp(-((w[ii-j0+j]-w[ii])**2)/(2*c**2)) for j in range(2*j0+1)]
         a = 1./np.sum([exp(-((disp[ii]*(j0-j))**2)/(2*c**2)) for j in range(2*j0+1)])
         P = [a*exp(-((disp[ii]*(j0-j))**2)/(2*c**2)) for j in range(2*j0+1)]
         j1 = max(1,j0-ii)
         j2 = min(2*j0, j0+(n-1)-ii)
         EW.append(disp[ii]*np.sum(P[j]*(f[ii+j-j0]-1.)for j in range(j1, j2+1))/np.sum(P[j]**2 for j in range(j1, j2+1)))
-        sig.append(disp[ii]*np.sqrt(np.sum(P[j]**2*u[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
-        sig_int.append(disp[ii]*np.sqrt(np.sum(P[j]**2*ui[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
+        signorm_int.append(disp[ii]*np.sqrt(np.sum(P[j]**2*uinorm[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
+        #sig.append(disp[ii]*np.sqrt(np.sum(P[j]**2*unorm[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
     func_ew = interp1d(w, EW, kind='linear')
     W = func_ew(w)
     sp['W_interp'] = pd.Series(W)
-    sp['W_u_interp'] = pd.Series(sig_int)
+    sp['W_u_interp'] = pd.Series(signorm_int)
     #-----plot if you want to see-------------------
     if plotit:
-        plt.plot(w, f, c='blue')
-        plt.plot(w, u, c='gray')
-        plt.plot(w, W, c='red')
-        plt.plot(w, np.zeros(len(w)), c='g', linestyle='--')
-        plt.plot(w, np.multiply(lim,sig_int), c='g')
+        plt.plot(w, f, c='blue', label='normalised flux')
+        plt.plot(w, u, c='gray', label='flux error')
+        plt.plot(w, W, c='red', label='interpolated EW')
+        plt.plot(w, np.zeros(len(w)), c='g', linestyle='--', label='zero level')
+        plt.plot(w, np.multiply(lim,sig_int), c='g', label=str(int(lim))+'sig EW err')
         plt.plot(w, -np.multiply(lim,sig_int), c='g')
         plt.xlim(4200,4600)
         plt.ylim(-1,3)
+        plt.xlabel('Observed wavelength (A)')
+        plt.legend()
         plt.show(block=False)
     
 #-------------Fucntion for updating popt, pcov when some parameters are fixed----------------------------
@@ -221,7 +225,6 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
         
     #fitting 3 parameters, keeping continuum fixed
     elif fix_cont:
-        #print sptemp[~np.isfinite(sptemp['flam'])] #
         p_init, lbound, ubound =[],[],[]
         cont = 1.
         for xx in range(0, len(l)):
@@ -230,7 +233,6 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
             lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*(1.-3.*l.zz_err.values[xx]/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln-3.*dresoln)])
             ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*(1.+3.*l.zz_err.values[xx]/(1.+l.zz.values[xx])),l.wave.values[xx]*v_maxwidth*gf2s/3e5])
         popt, pcov = curve_fit(lambda x, *p: s.fixcont_gaus(x, cont, len(l), *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
-        #print pcov #Debugging
         popt, pcov = update_p(popt, pcov, 0, cont, len(l))
     #fitting all 4 parameters, nothing fixed
     else:
@@ -253,7 +255,8 @@ def update_dataframe(sp, label, l, med_bin_flux, mad_bin_flux, df, resoln, dreso
     EWr_sum, EWr_sum_u = np.array(jrr.spec.calc_EW(f[:-1], f_u[:-1], f_c[:-1], 0., disp, l.zz))*1.05 #aperture correction sort of
     #-------3sigma limit from Schneider et al. 1993 prescription------------
     sign = (line_type_dic[l.type]) #to take care of emission/absorption
-    EW_3sig_lim = -1.*sign*3.*(sp.loc[sp.wave >= l.wave].W_u_interp.values[0])/(1+l.zz) #dividing by (1+z) as the dataframe has observed frame EW limits
+    EWr_3sig_lim = -1.*sign*3.*(sp.loc[sp.wave >= l.wave].W_u_interp.values[0])/(1+l.zz) #dividing by (1+z) as the dataframe has observed frame EW limits
+    fl_3sig_lim = -1.*EWr_3sig_lim*sp.loc[sp.wave >= l.wave].flam_autocont.values[0]
     #--------------------------------------------------
     if detection:
         cont = sp.loc[sp.wave >= popt[2]].flam_autocont.values[0]
@@ -268,15 +271,15 @@ def update_dataframe(sp, label, l, med_bin_flux, mad_bin_flux, df, resoln, dreso
         ("%.4f" % EWr_fit), ("%.4f" % EWr_fit_u), ("%.4f" % EWr_sum), ("%.4f" % EWr_sum_u), ("%.4e" % f_line),\
         ("%.4e" % f_line_u), \
         #("%.4e" % wt_mn), ("%.4e" % er_wt_mn), \
-        ("%.4e" % med_bin_flux),("%.4e" % mad_bin_flux), ("%.4e" % signi), ("%.4f" % EW_3sig_lim),\
-        ("%.4f" % popt[0]), ("%.4f" % popt[1]), ("%.4f" % popt[2]), \
+        ("%.4e" % med_bin_flux),("%.4e" % mad_bin_flux), ("%.4e" % signi), ("%.4f" % EWr_3sig_lim),\
+        ("%.4e" % fl_3sig_lim), ("%.4f" % popt[0]), ("%.4f" % popt[1]), ("%.4f" % popt[2]), \
         ("%.4f" % np.sqrt(pcov[2][2])), ("%.4f" % popt[3]), ("%.4f" % zz), ("%.4f" % zz_u)])
     else:
         row = np.array([label, l.label, ("%.4f" % l.wave), ("%.4f" % float(l.wave/(1+l.zz))), l.type, np.nan, np.nan, \
         ("%.4f" % EWr_sum), ("%.4f" % EWr_sum_u), np.nan, np.nan, \
         #("%.4e" % wt_mn), ("%.4e" % er_wt_mn), \
-        ("%.4e" % med_bin_flux),("%.4e" % mad_bin_flux), np.nan, ("%.4f" % EW_3sig_lim),\
-        np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
+        ("%.4e" % med_bin_flux),("%.4e" % mad_bin_flux), np.nan, ("%.4f" % EWr_3sig_lim),\
+        ("%.4e" % fl_3sig_lim), np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
     df.loc[len(df)] = row
     
 #-------Function to plot the gaussians-------------
@@ -399,6 +402,7 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
             sp2 = sp[sp['wave'].between(first*(1.-5./resoln), last*(1.+5./resoln))]
             sp2.flam = sp2.flam/sp2.flam_autocont #continuum normalising by autocont
             sp2.flam_u = sp2.flam_u/sp2.flam_autocont #continuum normalising by autocont
+
             if not args.showbin:
                 plt.axvline(np.min(sp2.wave), c='blue', lw=0.5, linestyle='--')
                 plt.axvline(np.max(sp2.wave), c='blue', lw=0.5, linestyle='--')
