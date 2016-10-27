@@ -130,7 +130,7 @@ def cont(x, *p):
 def cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list):
     xmin = lx[0]
     xmax = lx[-1]
-    wz, fl = cutspec(wz, fl, xmin, xmax)
+    wz, fl = cutspec_2comp(wz, fl, xmin, xmax)
     fl = np.divide(fl,cont(wz, *popt))
     c = 1
     print 'If you want to save this (this specific wavelength range) normalised spectrum as a file press f\n\
@@ -147,7 +147,7 @@ def fit(lx, ly, c):
     #sigma = np.sqrt(sum(y*(x-mean)**2)/n)
     sigma = 1.
     if c == 1:
-        popt,pcov = curve_fit(gaus1,lx,ly,p0=[ly[0], 1, lx[np.where(np.abs(ly-ly[0]) == np.max(np.abs(ly-ly[0])))[0][0]], sigma])
+        popt,pcov = curve_fit(gaus1,lx,ly,p0=[ly[0], ly[np.where(np.abs(ly-ly[0]) == np.max(np.abs(ly-ly[0])))[0][0]] - ly[0], lx[np.where(np.abs(ly-ly[0]) == np.max(np.abs(ly-ly[0])))[0][0]], sigma])
         print 'cont = '+str(format(popt[0]*const, '.3e'))+', flux = '+str(format(np.sqrt(2*np.pi)*popt[1]*popt[3]*const, '.3e'))+\
     ', center = '+str(format(popt[2], '.3f'))+'\nA, gfwhm = '+str(format(2*np.sqrt(2*np.log(2))*popt[3], '.3e'))+\
     ' A, EW = '+str(format(np.sqrt(2*np.pi)*popt[1]*popt[3]/popt[0], '.3e'))+', core = '+str(format(popt[1]*const, '.3e'))
@@ -158,17 +158,14 @@ def fit(lx, ly, c):
     return popt, pcov
 #--------------------Fucntion to accept click--------------------------------------------
 def onclick(event):
-    global k, lx, ly, ax, x, c, wz, fl
+    global k, lx, ly, ax, x, c, wz_full, fl_full
     mylog.write(str(event.xdata)+' ')
     x[k%2] = event.xdata;   
     if k%2 == 1:
-        w2, f2 = cutspec(wz, fl, x[0], x[1])
-        if c == 1:
-            lx = w2
-            ly = f2
-        elif c == 2:
-            lx.extend(w2)
-            ly.extend(f2)
+        w2, f2 = cutspec_2comp(wz_full, fl_full, x[0], x[1])
+        lx.extend(w2)
+        ly.extend(f2)
+        #print 'debug', lx, ly #
         mylog.write('\n')
     k = k+1;
     xn=np.linspace(event.xdata, event.xdata,100)
@@ -177,7 +174,9 @@ def onclick(event):
     plt.draw()
 #-------------------Function to accept keypress--------------------------------------------
 def onpress(event):
-    global lx, ly, ax, popt, list, c, wz, fl, xmin2, xmax2
+    global k, lx, ly, ax, popt, list, x, c, wz, fl, wz_full, fl_full, xmin, xmax, ymin, ymax
+    print 'xlim before', xmin, xmax #
+    dx = np.diff(ax.get_xlim())[0]
     print 'You pressed '+str(event.key)
     if event.key == 'c':
         print 'Sorry, <c> is not currently working, press <a> for continuum normalisation.'
@@ -188,10 +187,9 @@ def onpress(event):
         '''
     elif event.key == 'a':
         print 'Continuum normalising and replotting...'
-        wz, fl, c, xmin2, xmax2 = cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list)
-        makeplotint(wz, fl, xmin2, xmax2, c, list, const)
-        lx=[]
-        ly=[]
+        wz, fl, c, xmin, xmax = cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list)
+        makeplotint(wz, fl, xmin, xmax, c, list, const)
+        lx, ly=[],[]
     elif event.key == 'f':
         outfile = inp.split()[0][0:-4]+'_cont_norm_inrange('+str(xmin2)+','+str(xmax2)+').txt'
         head  = '# Continuum normalised '+inp+' at z=1.7033 \n'
@@ -202,10 +200,37 @@ def onpress(event):
         np.savetxt(outfile, np.transpose([wz, fl]), "%.2f  %.2E", header=head)
         print 'Saved '+outfile
     elif event.key == 'z':
-        print 'Zooming in to '+str(lx[0])+','+str(lx[-1])
-        makeplotint(wz, fl, lx[0], lx[-1], c, list, const)
-        lx=[]
-        ly=[]
+        print 'Zooming in to '+str(lx[0])+', '+str(lx[-1])
+        xmin, xmax = lx[0], lx[-1]
+        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
+        lx, ly, x=[],[],[0,0]
+    elif event.key == 'y':
+        x[k%2] = event.ydata
+        if k%2 == 0:
+            ymin = x[-1]
+            print 'Press <y> again.'
+        else:
+            ymax = x[-1]
+            ax.set_ylim(np.sort(x))
+            x=[0,0]
+        k+=1
+    elif event.key == 'r':
+        print 'Resetting plot...'
+        x, lx, ly, k=[0,0],[],[],0
+        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const)
+        ymin, ymax = ax.get_ylim()
+    elif event.key == '>':
+        print 'Moving right...'
+        xmin = xmax - dx/10.
+        xmax = xmax + dx
+        x=[0,0]
+        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
+    elif event.key == '<':
+        print 'Moving left...'
+        xmax = xmin + dx/10.
+        xmin = xmin - dx
+        x=[0,0]
+        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
     else:
         print 'going to fit...'
         popt, pcov = fit(lx, ly, c)
@@ -219,10 +244,10 @@ def onpress(event):
             plt.legend(handles = p, loc =8, fontsize = 12)
         elif c == 2:
             ax.plot(lx,cont(lx, *popt), linestyle='solid', color='black')
-    plt.ylim(np.min(fl)*0.8, np.max(fl)*1.2)
+        lx, ly=[],[]
     plt.draw()
 #-------------------Function to create the plot--------------------------------------------
-def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NONE', er_j = 'NONE'):
+def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NONE', er_j = 'NONE', ymin ='NONE', ymax='NONE'):
     global ax
     labels=[]
     ticks=[]
@@ -231,6 +256,7 @@ def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NON
     j = np.where(np.array(li)<xmax)[0][-1] if len(np.where(np.array(li)<xmax)[0])>0 else -1
     #-----------------Plotting spectrum------------------------------------------------------
     ax = fig.add_subplot(int(a1),int(b1),int(c1))
+    #fl /= np.median(fl) #
     ax.step(wz, fl, color='forestgreen')
     if not er is 'NONE':
         ax.step(wz, er, color='gray')
@@ -238,8 +264,11 @@ def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NON
         ax.step(wz, er_j, color='black')
     #----------------Labels------------------------------------------------------------------------
     ax.set_xlim([xmin,xmax])
-    if er is 'NONE':
+    if ymin is not 'NONE' and ymax is not 'NONE':
+        ax.set_ylim([ymin, ymax])
+    elif er is 'NONE':
         ax.set_ylim([np.min(fl)*0.95, np.max(fl)*1.05])
+        #ax.set_ylim([-2, 20])
     else:
         ax.set_ylim([0., min(3.,np.max(fl)*1.05)])
     fig.text(0.5, 0.04, 'Restframe Wavelength (A)', ha='center')
@@ -260,20 +289,27 @@ def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NON
     ax2.set_xticklabels(labels, rotation = 45, ha='left', fontsize='small')
     return fig
 #-----------Make interactive plot------------------------------
-def makeplotint(wz, fl, xmin, xmax, c, list, const):
+def makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin ='NONE', ymax='NONE'):
+    if xmin < 0.:
+        xmin = wz_full[0]
+    if xmax < 0.:
+        xmax = wz_full[-1]
+    wz, fl = cutspec_2comp(wz_full, fl_full, xmin, xmax)
+    #-----------------------------------------------------
     if c == 1:
-        mylog.write('#Log file for Gaussian fitting.')
+        mylog.write('#Log file for Gaussian fitting. For file '+ inp)
     elif c == 2:
-        mylog.write('#Log file for continuum fitting.')
+        mylog.write('#Log file for continuum fitting. For file '+ inp)
     mylog.write(' Column format: x1 x2 p[0] p[1] p[2] p[3] where x are clicked wavelengths and p[] are fitted parameters.\n')
     plt.close('all')
-    fig2 = plt.figure(figsize=(10,8))
-    fig = makeplot(wz, fl, xmin, xmax, list, fig2, const=const)
+    fig2 = plt.figure(figsize=(18,4))
+    fig2.subplots_adjust(hspace=0.7, top=0.8, bottom=0.15, left=0.07, right=0.98)
+    fig = makeplot(wz, fl, xmin, xmax, list, fig2, const=const, ymin=ymin, ymax=ymax)
     #------------------Interactive----------------------------------------------------------------------
     cid1 = fig.canvas.mpl_connect('button_press_event', onclick)
     cid2 = fig.canvas.mpl_connect('key_press_event', onpress)
     #-------------------Show/Save plot----------------------------------------------
-    plt.show()
+    plt.show(block=False)
     #plt.savefig('')
 #----------------Shift flux level----------------------------
 def shiftflux(fl, const):
@@ -306,19 +342,29 @@ def printinstruction(c, inp, xmin, xmax):
         Step 1: Spot a potential line (amission/absorption) in the plot\n\
         Step 2: Left click on the left of the line you want to fit (including a fair bit of continuum)\n\
         Step 3: Left click on the right of the line (again inlcuding bit of continuum)\n\
-        Step 4: Press any key (except Esc, c, f or s). Pressing z will zoom in the curve between your selected region.\n\
+        Step 4: Press any key (except Esc, c, y, <, >, f or s). Pressing z will zoom in the curve between your selected region.\n\
         Repeat from Step 1 for another line if desired. The last line you fit will still be showing on the plot.\n\
-        NOTE: It is assumed that your spectrum is already continuum fit. If not, choose c = 2 to do continuum fitting.'
+        NOTE: It is assumed that your spectrum is already continuum fit. If not, choose c = 2 to do continuum fitting.\n\
+        To zoom in x: Click on left xlim, click on right xlim, then press z.\n\
+        To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on upper ylim, again press y.\n\
+        To shift to higher wavelength (move plot towards right) type >\n\
+        To shift to lower wavelength (move plot towards left) type <.\n\
+        To restore plot to original form type r.\n'
     elif c == 2:
         print 'You have chosen c = 2, meaning CONTINUUM FITTING. Here are the instructions:\n\
         Step 1: Spot a *line-less* region in the plot where you would like to fit the continuum\n\
         Step 2: Left click on the left of that region\n\
         Step 3: Left click on the right of that region\n\
         Repeat from Step 1 for another region if desired. Keep on marking multiple regions (1 region = 1 pair of click).\n\
-        Step 4: Once you are done selecting all the bits of continuum, PRESS any key (except Esc, c, z, f, a or s) and wait.\n\
+        Step 4: Once you are done selecting all the bits of continuum, PRESS any key (except Esc, c, z, y, <, >, f, a or s) and wait.\n\
         CAUTION: This might take a long time depending on how many bits of continuum you have fitted already.\n\
         Step 5: In order to get continuum normalised spectra PRESS a. A new figure will pop up with normalised spectra\n\
-        within a region covered by your previously selected regions.'
+        within a region covered by your previously selected regions.\n\
+        To zoom in x: Click on left xlim, click on right xlim, then press z.\n\
+        To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on upper ylim, again press y.\n\
+        To shift to higher wavelength (move plot towards right) type >\n\
+        To shift to lower wavelength (move plot towards left) type <.\n\
+        To restore plot to original form type r.\n'
     else:
         print 'You have chosen c =', c, 'which does not mean anything. Please choose c = 1 or 2.\n\
         Exiting program.'
@@ -326,7 +372,7 @@ def printinstruction(c, inp, xmin, xmax):
 #-----------Main function starts------------------
 if __name__ == '__main__':
     #-----------Declaring arrays------------------------------
-    global k, lx, ly, ax, popt, x, list, c, xmin2, xmax2#, wz, fl, c,
+    global k, lx, ly, ax, popt, x, list, c, xmin, xmax, wz_full, fl_full, c, ymin, ymax
     k = 0
     x=[0 for ii in xrange(2)]
     lx=[]
@@ -343,27 +389,21 @@ if __name__ == '__main__':
     ll = str(l[5].split()[2]) #input spectrum (text file)
     fn.close()
     mylog = open('mysplot_log','w')
+    ymin, ymax = ['NONE']*2
     #-----------------Reading in the line list & spectrum------------------------------------------------
     list = readlist(ll)
-    #inp = '/Users/acharyya/Dropbox/MagE_atlas/Stacked/mage_stacked_spectrum.txt'
-    #wz, fl = readmagespec(inp)
-    wz, fl = readspec(inp)
-    const = np.median(fl)
+    wz_full, fl_full = readspec(inp)
+    const = np.median(fl_full)
     if const > 0. and const < 10.:
         const = 1.
     else:
         const = 10**(np.ceil(np.log10(const)))
-    wz = obstorest(wz, z)
-    fl = shiftflux(fl, const)
-    if xmin < 0.:
-        xmin = wz[0]
-    if xmax < 0.:
-        xmax = wz[-1]
-    wz, fl = cutspec(wz, fl, xmin, xmax)
+    wz_full = obstorest(wz_full, z)
+    fl_full = shiftflux(fl_full, const)
     printinstruction(c, inp, xmin, xmax)
-    makeplotint(wz, fl, xmin, xmax, c, list, const)
-    plt.close()
-    mylog.close()
+    makeplotint(wz_full, fl_full, xmin, xmax, c, list, const)
+    #plt.close()
+    #mylog.close()
 '''
 #-----------function for computing continuum------------------------------
 def compute_cont():
