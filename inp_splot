@@ -1,11 +1,11 @@
 #input file for splot.py. parameters are as explained in corresponding comments.  the SPACES are important!!!
 #-----------------------
-inp =  /Users/acharyya/Documents/esi_2016b/2016aug27_2x1/IRAF/s1723_side_b.txt #name of text file whose 1st col is wavelength & 2nd is flux
+inp =  /Users/acharyya/Documents/esi_2016b/2016aug27_2x1/IRAF/reduced/s1723_side_b.txt #name of text file whose 1st col is wavelength & 2nd is flux
 choice = 1 # choice is 1 for fitting gaussian and 2 for fitting continuum
 wmin = 3700 #  
 wmax = 3900 # limits (if any) of rest frame wavelength range which is to be be plotted. To plot whole spectrum, set one/both of these limits to any -ve value as necessary.
 z = 1.3294 #1.703318 # redshift to be used to scale the wavelength
-ll = /Users/acharyya/UVdata/line_list #ASCII file whose 1st col is linelabel & 2nd is rest wavelength
+ll = line_list #/Users/acharyya/UVdata/line_list #ASCII file whose 1st col is linelabel & 2nd is rest wavelength
 
 
 #------------------------

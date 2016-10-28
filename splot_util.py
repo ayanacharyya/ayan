@@ -8,8 +8,8 @@ from scipy.optimize import curve_fit
 from scipy import asarray as ar,exp
 from scipy.interpolate import interp1d
 from operator import itemgetter
-sys.path.append('/Users/acharyya/mage/JRR')
-import JRR as j
+sys.path.append('/Users/acharyya/Work/astro/mageproject/')
+import jrr as j
 import warnings
 warnings.filterwarnings("ignore")
 import re
@@ -345,6 +345,8 @@ def printinstruction(c, inp, xmin, xmax):
         Step 4: Press any key (except Esc, c, y, <, >, f or s). Pressing z will zoom in the curve between your selected region.\n\
         Repeat from Step 1 for another line if desired. The last line you fit will still be showing on the plot.\n\
         NOTE: It is assumed that your spectrum is already continuum fit. If not, choose c = 2 to do continuum fitting.\n\
+        \n\
+        \n\
         To zoom in x: Click on left xlim, click on right xlim, then press z.\n\
         To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on upper ylim, again press y.\n\
         To shift to higher wavelength (move plot towards right) type >\n\
@@ -360,6 +362,8 @@ def printinstruction(c, inp, xmin, xmax):
         CAUTION: This might take a long time depending on how many bits of continuum you have fitted already.\n\
         Step 5: In order to get continuum normalised spectra PRESS a. A new figure will pop up with normalised spectra\n\
         within a region covered by your previously selected regions.\n\
+        \n\
+        \n\
         To zoom in x: Click on left xlim, click on right xlim, then press z.\n\
         To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on upper ylim, again press y.\n\
         To shift to higher wavelength (move plot towards right) type >\n\
