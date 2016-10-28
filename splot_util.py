@@ -48,18 +48,22 @@ def readlist(ll, isstacked = False):
     return list
 #------------Reading input spectra-------------------------------
 def readspec(inp):
-    wz = []
-    fl = []
+    wz,fl,er = [],[],[]
     fn = open(inp, 'r')
     lines = fn.readlines()
     for line in lines:
         if len(line.split())>1:
             wl = line.split()[0]
             t = line.split()[1]
+            if len(line.split()) > 2:
+                e = line.split()[2]
+            else:
+                e=0
             if isfloat(wl) and not np.isnan(float(t)):
                 wz.append(float(wl))
                 fl.append(float(t))
-    return wz, fl
+                er.append(float(e))
+    return wz, fl, er
 #-----------Reading input stacked mage spectra----------------------------
 def readstackedmagespec(inp):
     s = ascii.read(inp, comment="#")
@@ -127,11 +131,12 @@ def gaus(x,n,*p):
 def cont(x, *p):
     return p[0]*x**3 + p[1]*x**2 + p[2]*x + p[3]
 #-------------------Function to continuum normalise--------------------------------------------
-def cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list):
+def cont_norm(lx, ly, wz, fl, er, c, popt, xmin, xmax, list):
     xmin = lx[0]
     xmax = lx[-1]
-    wz, fl = cutspec_2comp(wz, fl, xmin, xmax)
+    wz, fl, er = cutspec_3comp(wz, fl, er, xmin, xmax)
     fl = np.divide(fl,cont(wz, *popt))
+    er = np.divide(er,cont(wz, *popt))
     c = 1
     print 'If you want to save this (this specific wavelength range) normalised spectrum as a file press f\n\
     NOTE: Now c has been automatically set to c = 1, so you can directly proceed with gaussian fitting as follows:\n\
@@ -140,7 +145,7 @@ def cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list):
     Step 3: Left click on the right of the line (again inlcuding bit of continuum)\n\
     Step 4: Press any key (except Esc, c, z, f or s)\n\
     Repeat from Step 1 for another line if desired. The last line you fit will still be showing on the plot.'
-    return wz, fl, c, xmin, xmax
+    return wz, fl, er, c, xmin, xmax
 #-------------Fucntion for fitting Gaussian or continuum----------------------------
 def fit(lx, ly, c):
     ly = np.array(ly)
@@ -174,7 +179,7 @@ def onclick(event):
     plt.draw()
 #-------------------Function to accept keypress--------------------------------------------
 def onpress(event):
-    global k, lx, ly, ax, popt, list, x, c, wz, fl, wz_full, fl_full, xmin, xmax, ymin, ymax
+    global k, lx, ly, ax, popt, list, x, c, wz, fl, er, wz_full, fl_full, er_full, xmin, xmax, ymin, ymax
     print 'xlim before', xmin, xmax #
     dx = np.diff(ax.get_xlim())[0]
     print 'You pressed '+str(event.key)
@@ -187,8 +192,8 @@ def onpress(event):
         '''
     elif event.key == 'a':
         print 'Continuum normalising and replotting...'
-        wz, fl, c, xmin, xmax = cont_norm(lx, ly, wz, fl, c, popt, xmin, xmax, list)
-        makeplotint(wz, fl, xmin, xmax, c, list, const)
+        wz, fl, er, c, xmin, xmax = cont_norm(lx, ly, wz, fl, er, c, popt, xmin, xmax, list)
+        makeplotint(wz, fl, er, xmin, xmax, c, list, const)
         lx, ly=[],[]
     elif event.key == 'f':
         outfile = inp.split()[0][0:-4]+'_cont_norm_inrange('+str(xmin2)+','+str(xmax2)+').txt'
@@ -202,7 +207,7 @@ def onpress(event):
     elif event.key == 'z':
         print 'Zooming in to '+str(lx[0])+', '+str(lx[-1])
         xmin, xmax = lx[0], lx[-1]
-        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
+        makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
         lx, ly, x=[],[],[0,0]
     elif event.key == 'y':
         x[k%2] = event.ydata
@@ -217,20 +222,20 @@ def onpress(event):
     elif event.key == 'r':
         print 'Resetting plot...'
         x, lx, ly, k=[0,0],[],[],0
-        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const)
+        makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const)
         ymin, ymax = ax.get_ylim()
     elif event.key == '>':
         print 'Moving right...'
         xmin = xmax - dx/10.
         xmax = xmax + dx
         x=[0,0]
-        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
+        makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
     elif event.key == '<':
         print 'Moving left...'
         xmax = xmin + dx/10.
         xmin = xmin - dx
         x=[0,0]
-        makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
+        makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
     else:
         print 'going to fit...'
         popt, pcov = fit(lx, ly, c)
@@ -247,7 +252,7 @@ def onpress(event):
         lx, ly=[],[]
     plt.draw()
 #-------------------Function to create the plot--------------------------------------------
-def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NONE', er_j = 'NONE', ymin ='NONE', ymax='NONE'):
+def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j = 'NONE', ymin ='NONE', ymax='NONE'):
     global ax
     labels=[]
     ticks=[]
@@ -258,19 +263,16 @@ def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NON
     ax = fig.add_subplot(int(a1),int(b1),int(c1))
     #fl /= np.median(fl) #
     ax.step(wz, fl, color='forestgreen')
-    if not er is 'NONE':
-        ax.step(wz, er, color='gray')
+    ax.step(wz, er, color='gray')
     if not er_j is 'NONE':
         ax.step(wz, er_j, color='black')
     #----------------Labels------------------------------------------------------------------------
     ax.set_xlim([xmin,xmax])
     if ymin is not 'NONE' and ymax is not 'NONE':
         ax.set_ylim([ymin, ymax])
-    elif er is 'NONE':
-        ax.set_ylim([np.min(fl)*0.95, np.max(fl)*1.05])
         #ax.set_ylim([-2, 20])
     else:
-        ax.set_ylim([0., min(3.,np.max(fl)*1.05)])
+        ax.set_ylim([min(0.,np.min(fl)*0.95), min(3.,np.max(fl)*1.05)])
     fig.text(0.5, 0.04, 'Restframe Wavelength (A)', ha='center')
     fig.text(0.04, 0.5, 'f_nu (x '+str(const)+')', va='center', rotation='vertical')
     #----------------Plotting horizontal & vertical lines-------------------------------------------------
@@ -289,12 +291,12 @@ def makeplot(wz, fl, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er = 'NON
     ax2.set_xticklabels(labels, rotation = 45, ha='left', fontsize='small')
     return fig
 #-----------Make interactive plot------------------------------
-def makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin ='NONE', ymax='NONE'):
+def makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin ='NONE', ymax='NONE'):
     if xmin < 0.:
         xmin = wz_full[0]
     if xmax < 0.:
         xmax = wz_full[-1]
-    wz, fl = cutspec_2comp(wz_full, fl_full, xmin, xmax)
+    wz, fl, er = cutspec_3comp(wz_full, fl_full, er_full, xmin, xmax)
     #-----------------------------------------------------
     if c == 1:
         mylog.write('#Log file for Gaussian fitting. For file '+ inp)
@@ -304,7 +306,7 @@ def makeplotint(wz_full, fl_full, xmin, xmax, c, list, const, ymin ='NONE', ymax
     plt.close('all')
     fig2 = plt.figure(figsize=(18,4))
     fig2.subplots_adjust(hspace=0.7, top=0.8, bottom=0.15, left=0.07, right=0.98)
-    fig = makeplot(wz, fl, xmin, xmax, list, fig2, const=const, ymin=ymin, ymax=ymax)
+    fig = makeplot(wz, fl, er, xmin, xmax, list, fig2, const=const, ymin=ymin, ymax=ymax)
     #------------------Interactive----------------------------------------------------------------------
     cid1 = fig.canvas.mpl_connect('button_press_event', onclick)
     cid2 = fig.canvas.mpl_connect('key_press_event', onpress)
@@ -396,7 +398,7 @@ if __name__ == '__main__':
     ymin, ymax = ['NONE']*2
     #-----------------Reading in the line list & spectrum------------------------------------------------
     list = readlist(ll)
-    wz_full, fl_full = readspec(inp)
+    wz_full, fl_full, er_full = readspec(inp)
     const = np.median(fl_full)
     if const > 0. and const < 10.:
         const = 1.
@@ -404,8 +406,9 @@ if __name__ == '__main__':
         const = 10**(np.ceil(np.log10(const)))
     wz_full = obstorest(wz_full, z)
     fl_full = shiftflux(fl_full, const)
+    er_full = shiftflux(er_full, const)
     printinstruction(c, inp, xmin, xmax)
-    makeplotint(wz_full, fl_full, xmin, xmax, c, list, const)
+    makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const)
     #plt.close()
     #mylog.close()
 '''
