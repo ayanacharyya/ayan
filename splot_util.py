@@ -197,7 +197,7 @@ def onpress(event):
         lx, ly=[],[]
     elif event.key == 'f':
         outfile = inp.split()[0][0:-4]+'_cont_norm_inrange('+str(xmin2)+','+str(xmax2)+').txt'
-        head  = '# Continuum normalised '+inp+' at z=1.7033 \n'
+        head  = '# Continuum normalised '+inp+' at z= \n'
         head += '# restwave    :  Restframe wavelength, binned, in Angstroms.\n'
         head += '# flux : continuum normalised flux values \n'
         head += '# Columns are: \n'
@@ -236,7 +236,7 @@ def onpress(event):
         xmin = xmin - dx
         x=[0,0]
         makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
-    else:
+    elif event.key == 'g':
         print 'going to fit...'
         popt, pcov = fit(lx, ly, c)
         lx = np.array(lx)
@@ -253,7 +253,7 @@ def onpress(event):
     plt.draw()
 #-------------------Function to create the plot--------------------------------------------
 def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j = 'NONE', ymin ='NONE', ymax='NONE'):
-    global ax
+    global ax, inp
     labels=[]
     ticks=[]
     li = [a[1] for a in list]
@@ -272,9 +272,23 @@ def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j 
         ax.set_ylim([ymin, ymax])
         #ax.set_ylim([-2, 20])
     else:
-        ax.set_ylim([min(0.,np.min(fl)*0.95), min(3.,np.max(fl)*1.05)])
+        #ax.set_ylim([min(0.,np.min(fl)*0.95), min(3.,np.max(fl)*1.05)])
+        ax.set_ylim([-4e-17,9e-17])
     fig.text(0.5, 0.04, 'Restframe Wavelength (A)', ha='center')
-    fig.text(0.04, 0.5, 'f_nu (x '+str(const)+')', va='center', rotation='vertical')
+    fig.text(0.04, 0.4, 'f_nu (x '+str(const)+')', va='center', rotation='vertical')
+    instructions = 'To zoom in x: Click on left xlim, click on right xlim, then press z\n\
+To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on upper ylim, again press y\n\
+To shift to higher wavelength (move plot towards right) type >\n\
+To shift to lower wavelength (move plot towards left) type <\n\
+To restore plot to original form type r (do this if they plot looks weird)\n\
+To save snapshot as png press s\n\
+\n\
+To fit a line: Click on the left of the line you want to fit \
+followed by a click on the right of the line (including a fair bit of continuum on either side). \
+Then press g\n\
+\n\
+Spectrum of '+ inp +' \n'
+    fig.text(0.5, 0.66, instructions, ha='center')
     #----------------Plotting horizontal & vertical lines-------------------------------------------------
     ax.axhline(1.0, linestyle='--', color='black')
     for ii in range(i,j+1):
@@ -304,8 +318,8 @@ def makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin ='NO
         mylog.write('#Log file for continuum fitting. For file '+ inp)
     mylog.write(' Column format: x1 x2 p[0] p[1] p[2] p[3] where x are clicked wavelengths and p[] are fitted parameters.\n')
     plt.close('all')
-    fig2 = plt.figure(figsize=(18,4))
-    fig2.subplots_adjust(hspace=0.7, top=0.8, bottom=0.15, left=0.07, right=0.98)
+    fig2 = plt.figure(figsize=(18,6.5))
+    fig2.subplots_adjust(hspace=0.7, top=0.6, bottom=0.1, left=0.07, right=0.98)
     fig = makeplot(wz, fl, er, xmin, xmax, list, fig2, const=const, ymin=ymin, ymax=ymax)
     #------------------Interactive----------------------------------------------------------------------
     cid1 = fig.canvas.mpl_connect('button_press_event', onclick)
@@ -344,7 +358,7 @@ def printinstruction(c, inp, xmin, xmax):
         Step 1: Spot a potential line (amission/absorption) in the plot\n\
         Step 2: Left click on the left of the line you want to fit (including a fair bit of continuum)\n\
         Step 3: Left click on the right of the line (again inlcuding bit of continuum)\n\
-        Step 4: Press any key (except Esc, c, y, <, >, f or s). Pressing z will zoom in the curve between your selected region.\n\
+        Step 4: Press g. Pressing z will zoom in the curve between your selected region.\n\
         Repeat from Step 1 for another line if desired. The last line you fit will still be showing on the plot.\n\
         NOTE: It is assumed that your spectrum is already continuum fit. If not, choose c = 2 to do continuum fitting.\n\
         \n\
@@ -360,7 +374,7 @@ def printinstruction(c, inp, xmin, xmax):
         Step 2: Left click on the left of that region\n\
         Step 3: Left click on the right of that region\n\
         Repeat from Step 1 for another region if desired. Keep on marking multiple regions (1 region = 1 pair of click).\n\
-        Step 4: Once you are done selecting all the bits of continuum, PRESS any key (except Esc, c, z, y, <, >, f, a or s) and wait.\n\
+        Step 4: Once you are done selecting all the bits of continuum, PRESS g and wait.\n\
         CAUTION: This might take a long time depending on how many bits of continuum you have fitted already.\n\
         Step 5: In order to get continuum normalised spectra PRESS a. A new figure will pop up with normalised spectra\n\
         within a region covered by your previously selected regions.\n\
@@ -378,7 +392,7 @@ def printinstruction(c, inp, xmin, xmax):
 #-----------Main function starts------------------
 if __name__ == '__main__':
     #-----------Declaring arrays------------------------------
-    global k, lx, ly, ax, popt, x, list, c, xmin, xmax, wz_full, fl_full, c, ymin, ymax
+    global k, lx, ly, ax, popt, x, list, c, xmin, xmax, wz_full, fl_full, c, ymin, ymax, inp
     k = 0
     x=[0 for ii in xrange(2)]
     lx=[]
