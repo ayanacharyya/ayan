@@ -55,13 +55,20 @@ def makelist(linelist):
      '[O III] 2331',\
      'O III] 1666',\
      'O III] 1660',\
-     'N II 1084', 'N II 1085', \
-     'N I 1134a', 'N I 1134b', 'N I 1134c', \
+     'N II 1084', 'N II 1085',\
+     'N I 1134a', 'N I 1134b', 'N I 1134c',\
      'N III 1183', 'N III 1184', 'N IV 1169', 'N III 1324', 'N IV 1718',\
      'N IV] 1486', 'N II] 2140',\
-     ]
+     'Mn II 2576','Fe II 2586','Mn II 2594','Fe II 2599','Fe II 2600',\
+    'Mn II 2606','Fe II 2607','Fe II 2612','Fe II 2614','Fe II 2618','Fe II 2621','Fe II 2622','Fe II 2626','Fe II 2629','Fe II 2631','Fe II 2632',\
+    'Mg II 2796','Mg II 2803','Mg I 2852',\
+    'Ti II 3073','Ti II 3230','Ti II 3239','Ti II 3242','Ti II 3384',\
+    'Ca II 3934','Ca II 3969','Ca I 4227',\
+    'Na I 5891','Na I 5897',\
+    'Li I 6709'\
+]
     (LL, zz_redundant) = jrr.mage.get_linelist(linelist)
-    line_full = pd.DataFrame(columns=['label','wave','type','source'])
+    line_full = pd.DataFrame(columns=['LineID','restwave','type','source'])
     for label in target_line_labels_to_fit:
         try:
             t = LL[(LL['lab1']+' '+LL['lab2']).eq(label) & LL['type'].ne('INTERVE')].type.values[0]
@@ -70,8 +77,8 @@ def makelist(linelist):
             continue
         row = np.array([''+label.replace(' ', ''), LL[(LL['lab1']+' '+LL['lab2']).eq(label) & LL['type'].ne('INTERVE')].restwav.values[0], t, 'Leitherer'])
         line_full.loc[len(line_full)] = row
-    fout = 'labframe.shortlinelist'
-    line.to_csv(fout, sep='\t',mode ='a', index=None)
+    fout = 'labframe.shortlinelist_esi'
+    line_full.to_csv(fout, sep='\t',mode ='a', index=None)
 
     fn = open('/Users/acharyya/Mappings/lab/targetlines.txt','r')
     fout2 = open(fout,'a')
@@ -82,9 +89,14 @@ def makelist(linelist):
     fn.close()
     LL = pd.read_table(fout, delim_whitespace=True, comment='#') # Load different, shorter linelist to fit lines
     LL = LL.sort('restwave')
+    head = '#New customised linelist mostly only for emission lines\n\
+#Columns are:\n\
+LineID  restwave    type    source\n'
+
     np.savetxt(fout, np.transpose([LL.LineID, LL.restwave, LL.type, LL.source]), "%s   %s   %s   %s", \
     header=head, comments='')
-    subprocess.call(['python /Users/acharyya/Desktop/mage_plot/comment_file.py '+'/Users/acharyya/Dropbox/MagE_atlas/Tools/Contrib/'+fout],shell=True)
+    print 'Created new linelist', fout
+    #subprocess.call(['python /Users/acharyya/Desktop/mage_plot/comment_file.py '+'/Users/acharyya/Dropbox/MagE_atlas/Tools/Contrib/'+fout],shell=True)
 #-----------Function to flag skylines in a different way than by JRR, if required----------------------
 def flag_skylines(sp) :
     # Mask skylines [O I] 5577\AA\ and [O I]~6300\AA,
@@ -100,10 +112,33 @@ def flag_skylines(sp) :
 def fit_autocont(sp_orig, zz_sys, line_path, filename):
     if 'stack' in filename:
         linelist = line_path+'stacked.linelist'
+    elif 'esi' in filename:
+        linelist = line_path+'stacked.linelist' 
     else:
         linelist = jrr.mage.get_linelist_name(filename, line_path)   # convenience function
     (LL, zz_redundant) = jrr.mage.get_linelist(linelist)  # Load the linelist to fit auto-cont    
     jrr.mage.auto_fit_cont(sp_orig, LL, zz_sys)  # Automatically fit continuum.  results written to sp.fnu_autocont, sp.flam_autocont.
+
+#-------------Function to read in specra file of format (obswave, fnu, fnu_u, restwave), based on jrr.mage.open_spectrum------------------
+def open_esi_spectrum(infile, getclean=True) :
+    '''Reads a reduced ESI spectrum
+      Inputs:   filename to read in
+      Outputs:  the object spectrum, in both flam and fnu (why not?) all in Pandas data frame
+      Pandas keys:  wave, fnu, fnu_u, flam, flam_u
+      call:  (Pandas_spectrum_dataframe, spectral_resolution) = ayan.mage.open_spectrum(infile)
+    '''
+    sp =  pd.read_table(infile, delim_whitespace=True, comment="#", header=0)#, names=names)
+    sp.rename(columns= {'obswave'  : 'wave'}, inplace=True)
+    sp['fnu'] = sp['fnu'].astype(np.float64)   #force to be a float, not a str
+    sp['fnu_u'] = sp['fnu_u'].astype(np.float64)   #force to be a float, not a str
+    sp['wave'] = sp['wave'].astype(np.float64)   #force to be a float, not a str
+    sp['flam']     = jrr.spec.fnu2flam(sp.wave, sp.fnu)          # convert fnu to flambda
+    sp['flam_u']   = jrr.spec.fnu2flam(sp.wave, sp.fnu_u)
+    if getclean:
+        sp.badmask = sp.badmask.astype(bool)
+        sp = sp[~sp['badmask']]
+    sp['fnu_autocont'] = pd.Series(np.ones_like(sp.wave)*np.nan)  # Will fill this with automatic continuum fit
+    return sp   # Returns the spectrum as a Pandas data frame, the spectral resoln as a float, and its uncertainty
 
 #-------------Function to get the list of lines to fit--------------------------
 def getlist(listname, zz_dic, zz_err_dic):
@@ -255,9 +290,9 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
 def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, detection=True):
     global line_type_dic
     #------calculating EW using simple summation------
-    wv, f, f_c, f_u = s.cutspec(sp.wave, sp.flam*sp.flam_autocont, sp.flam_autocont, sp.flam_u*sp.flam_autocont, l.wave*(1.-2.*gs2f/(resoln-dresoln)),  l.wave*(1.+2.*gs2f/(resoln+dresoln))) # +/- 2 sigma ->FWHM
+    wv, f, f_c, f_u = s.cutspec(sp.wave, sp.flam*sp.flam_autocont, sp.flam_autocont, sp.flam_u*sp.flam_autocont, l.wave*(1.-2.*gs2f/(resoln-dresoln)),  l.wave*(1.+2.*gs2f/(resoln-dresoln))) # +/- 2 sigma ->FWHM
     disp = [j-i for i, j in zip(wv[:-1], wv[1:])]
-    EWr_sum, EWr_sum_u = np.array(jrr.spec.calc_EW(f[:-1], f_u[:-1], f_c[:-1], 0., disp, l.zz))*1.05 #aperture correction sort of
+    EWr_sum, EWr_sum_u = np.array(jrr.spec.calc_EW(f[:-1], f_u[:-1], f_c[:-1], 0., disp, l.zz)) #*1.05 #aperture correction sort of
     #-------3sigma limit from Schneider et al. 1993 prescription------------
     sign = (line_type_dic[l.type]) #to take care of emission/absorption
     EWr_3sig_lim = -1.*sign*3.*(sp.loc[sp.wave >= l.wave].W_u_interp.values[0])/(1+l.zz) #dividing by (1+z) as the dataframe has observed frame EW limits
@@ -419,7 +454,8 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
                     except:
                         pass
                 if not args.silent:
-                    print 'Could not fit these', c, 'lines.' 
+                    print 'Could not fit these', c, 'lines.'
+                    print 'Error in ayan.mage.fit_some_EWs:', e #
             
             first, last = [center2]*2
             if kk < len(line) and 'Ly-alpha' in line.label.values[kk]: #treating Ly-alpha specially: widening the wavelength window
