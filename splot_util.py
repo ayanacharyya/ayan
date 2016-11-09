@@ -133,10 +133,9 @@ def gaus(x,n,*p):
 def cont(x, *p):
     return p[0]*x**3 + p[1]*x**2 + p[2]*x + p[3]
 #-------------------Function to continuum normalise--------------------------------------------
-def cont_norm(lx, ly, wz, fl, er, c, popt, xmin, xmax, list):
+def cont_norm(lx, ly, wz, fl, er, c, popt, list):
     xmin = lx[0]
     xmax = lx[-1]
-    wz, fl, er = cutspec_3comp(wz, fl, er, xmin, xmax)
     fl = np.divide(fl,cont(wz, *popt))
     er = np.divide(er,cont(wz, *popt))
     c = 1
@@ -172,7 +171,6 @@ def onclick(event):
         w2, f2 = cutspec_2comp(wz_full, fl_full, x[0], x[1])
         lx.extend(w2)
         ly.extend(f2)
-        #print 'debug', lx, ly #
         mylog.write('\n')
     k = k+1;
     xn=np.linspace(event.xdata, event.xdata,100)
@@ -182,7 +180,6 @@ def onclick(event):
 #-------------------Function to accept keypress--------------------------------------------
 def onpress(event):
     global k, lx, ly, ax, popt, list, x, c, wz, fl, er, wz_full, fl_full, er_full, xmin, xmax, ymin, ymax
-    print 'xlim before', xmin, xmax #
     dx = np.diff(ax.get_xlim())[0]
     print 'You pressed '+str(event.key)
     if event.key == 'c':
@@ -194,9 +191,10 @@ def onpress(event):
         '''
     elif event.key == 'a':
         print 'Continuum normalising and replotting...'
-        wz, fl, er, c, xmin, xmax = cont_norm(lx, ly, wz, fl, er, c, popt, xmin, xmax, list)
-        makeplotint(wz, fl, er, xmin, xmax, c, list, const)
-        lx, ly=[],[]
+        wz_full, fl_full, er_full, c, xmin, xmax = cont_norm(lx, ly, wz_full, fl_full, er_full, c, popt, list)
+        makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const)
+        x, lx, ly, k=[0,0],[],[],0
+        ymin, ymax = ax.get_ylim()
     elif event.key == 'f':
         outfile = inp.split()[0][0:-4]+'_cont_norm_inrange('+str(xmin2)+','+str(xmax2)+').txt'
         head  = '# Continuum normalised '+inp+' at z= \n'
@@ -249,9 +247,15 @@ def onpress(event):
             p = ax.plot(lx, gaus1(lx,*popt), label=l, linestyle='solid', color = 'black')
             #ax.plot(lx, gaus1(lx,np.min(ly), 1, (x[0]+x[1])/2, 1.), label='guess', linestyle='dotted')
             plt.legend(handles = p, loc =8, fontsize = 12)
+            lx, ly=[],[]
         elif c == 2:
             ax.plot(lx,cont(lx, *popt), linestyle='solid', color='black')
-        lx, ly=[],[]
+    elif event.key == 'q':
+        plt.title(fn)
+        fig = plt.gcf()
+        fig.texts[2].remove()
+        fig.subplots_adjust(hspace=0.7, top=0.85, bottom=0.15, left=0.07, right=0.98)
+        fig.set_size_inches(16,4.5)
     plt.draw()
 #-------------------Function to create the plot--------------------------------------------
 def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j = 'NONE', ymin ='NONE', ymax='NONE'):
@@ -263,15 +267,14 @@ def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j 
     j = np.where(np.array(li)<xmax)[0][-1] if len(np.where(np.array(li)<xmax)[0])>0 else -1
     #-----------------Plotting spectrum------------------------------------------------------
     ax = fig.add_subplot(int(a1),int(b1),int(c1))
-    #fl /= np.median(fl) #
     ax.step(wz, fl, color='forestgreen')
     ax.step(wz, er, color='gray')
     if not er_j is 'NONE':
         ax.step(wz, er_j, color='black')
     #----------------Labels------------------------------------------------------------------------
     ax.set_xlim([xmin,xmax])
-    if ymin is 'NONE': ymin = min(0.,np.min(fl)*0.95)
-    if ymax is 'NONE': ymax = min(3.,np.max(fl)*1.05)
+    if ymin is 'NONE': ymin = np.min(fl)*0.95
+    if ymax is 'NONE': ymax = np.max(fl)*1.05
     ax.set_ylim([ymin, ymax])
     fig.text(0.5, 0.04, 'Restframe Wavelength (A)', ha='center')
     fig.text(0.04, 0.4, 'f_nu (x '+str(const)+')', va='center', rotation='vertical')
@@ -280,13 +283,19 @@ To zoom in y: Place (NOT click) cursor on lower ylim, press y, place cursor on u
 To shift to higher wavelength (move plot towards right) type >\n\
 To shift to lower wavelength (move plot towards left) type <\n\
 To restore plot to original form type r (do this if they plot looks weird)\n\
-To save snapshot as png press s\n\
-\n\
-To fit a line: Click on the left of the line you want to fit \
+To save snapshot as png press q followed by s\n\
+\n'
+    if c == 1: 
+        instructions += 'To fit a line: Click on the left of the line you want to fit \
 followed by a click on the right of the line (including a fair bit of continuum on either side). \
 Then press g\n\
-\n\
-Spectrum of '+ inp +' \n'
+\n'
+    elif c ==2: 
+        instructions += 'To fit contiuum: Click on the left of the line-less region you want to fit \
+followed by a click on the right of it. Repeat to include multiple regions if desired.(1 region = 1 pair of click).\n\
+Then press g and wait as this may take a few minutes. When its done, in order to get continuum normalised spectra PRESS a.\n\
+A new figure will pop up with normalised spectra within a region covered by your previously selected regions.\n'
+    instructions += 'Spectrum of '+ inp +' \n'
     fig.text(0.5, 0.66, instructions, ha='center')
     #----------------Plotting horizontal & vertical lines-------------------------------------------------
     ax.axhline(1.0, linestyle='--', color='black')
@@ -350,10 +359,8 @@ def cutspec_2comp(wz, fl, xmin, xmax):
     return wz, fl
 #-----------------Printing instructions------------------------------------------------
 def printinstruction(c, inp, xmin, xmax):
-    print 'You have opened file '+inp
-    print 'You have chosen to dispplay the rest frame wavelength values in range ', xmin, 'to', xmax
     if c == 1:
-        print 'You have chosen c = 1, meaning GAUSSIAN FITTING. Here are the instructions:\n\
+        print 'You have chosen GAUSSIAN FITTING. Here are the instructions:\n\
         Step 1: Spot a potential line (amission/absorption) in the plot\n\
         Step 2: Left click on the left of the line you want to fit (including a fair bit of continuum)\n\
         Step 3: Left click on the right of the line (again inlcuding bit of continuum)\n\
@@ -368,7 +375,7 @@ def printinstruction(c, inp, xmin, xmax):
         To shift to lower wavelength (move plot towards left) type <.\n\
         To restore plot to original form type r.\n'
     elif c == 2:
-        print 'You have chosen c = 2, meaning CONTINUUM FITTING. Here are the instructions:\n\
+        print 'You have chosen CONTINUUM FITTING. Here are the instructions:\n\
         Step 1: Spot a *line-less* region in the plot where you would like to fit the continuum\n\
         Step 2: Left click on the left of that region\n\
         Step 3: Left click on the right of that region\n\
@@ -384,10 +391,6 @@ def printinstruction(c, inp, xmin, xmax):
         To shift to higher wavelength (move plot towards right) type >\n\
         To shift to lower wavelength (move plot towards left) type <.\n\
         To restore plot to original form type r.\n'
-    else:
-        print 'You have chosen c =', c, 'which does not mean anything. Please choose c = 1 or 2.\n\
-        Exiting program.'
-        sys.exit()
 #-----------Main function starts------------------
 if __name__ == '__main__':
     #-----------Declaring arrays------------------------------
