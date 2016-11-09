@@ -13,6 +13,8 @@ import jrr as j
 import warnings
 warnings.filterwarnings("ignore")
 import re
+import argparse as ap
+parser = ap.ArgumentParser(description="observables generating tool")
 #-------------Choosing color according to line strength----------
 def choosecol(n):
     if n == 1:
@@ -268,12 +270,9 @@ def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j 
         ax.step(wz, er_j, color='black')
     #----------------Labels------------------------------------------------------------------------
     ax.set_xlim([xmin,xmax])
-    if ymin is not 'NONE' and ymax is not 'NONE':
-        ax.set_ylim([ymin, ymax])
-        #ax.set_ylim([-2, 20])
-    else:
-        #ax.set_ylim([min(0.,np.min(fl)*0.95), min(3.,np.max(fl)*1.05)])
-        ax.set_ylim([-4e-17,9e-17])
+    if ymin is 'NONE': ymin = min(0.,np.min(fl)*0.95)
+    if ymax is 'NONE': ymax = min(3.,np.max(fl)*1.05)
+    ax.set_ylim([ymin, ymax])
     fig.text(0.5, 0.04, 'Restframe Wavelength (A)', ha='center')
     fig.text(0.04, 0.4, 'f_nu (x '+str(const)+')', va='center', rotation='vertical')
     instructions = 'To zoom in x: Click on left xlim, click on right xlim, then press z\n\
@@ -398,18 +397,82 @@ if __name__ == '__main__':
     lx=[]
     ly=[]
     y = np.linspace(-1, 2, 100)
-    #-------------Reading input file----------------------------------------------------
-    fn =open('inp_splot','r')
-    l=fn.readlines()[2:]
-    inp = str(l[0].split()[2]) #input spectrum (text file)
-    c = int(l[1].split()[2]) # choice: gaussian line fit OR continuum fit?
-    xmin = float(l[2].split()[2]) # limits of wavelength which 
-    xmax = float(l[3].split()[2]) # are to be be plotted
-    z = float(l[4].split()[2]) # redshift
-    ll = str(l[5].split()[2]) #input spectrum (text file)
-    fn.close()
+    #-------------Reading input arguments----------------------------------------------------
+    parser.add_argument('--fitgauss', dest='fitgauss', action='store_true')
+    parser.set_defaults(fitgauss=False)
+    parser.add_argument('--fitcont', dest='fitcont', action='store_true')
+    parser.set_defaults(fitcont=False)
+
+    parser.add_argument("--path")
+    parser.add_argument("--file")
+    parser.add_argument("--ll")
+    parser.add_argument("--xmin")
+    parser.add_argument("--xmax")
+    parser.add_argument("--z")
+    parser.add_argument("--ymin")
+    parser.add_argument("--ymax")
+    args, leftovers = parser.parse_known_args()
+
+    if args.fitcont: c = 2
+    elif args.fitgauss: c = 1
+    else: c = 1 #default is fitgauss
+    
+    if args.path is not None:
+        path = args.path
+        print 'Using path=', path
+    else:
+        path = '/Users/acharyya/Documents/esi_2016b/2016aug27_2x1/IRAF/reduced/' #which path to use
+        print 'Path not specified. Using default', path, '. Use --path option to specify path.'
+
+    if args.file is not None:
+        fn = args.file
+        print 'Opening spectrum=', fn
+    else:
+        fn = 's1723_arc_b_esi' #which spectrum to use
+        print 'Spectrum not specified. Using default', fn, '. Use --file option to specify spectrum.'
+    if '.txt' not in fn: fn+='.txt'
+    inp = path + fn #input spectrum (text file)
+    
+    if args.ll is not None:
+        ll = args.ll
+        print 'Using linelist=', ll
+    else:
+        ll = 'line_list' #which spectrum to use
+        print 'Line list not specified. Using default', ll, '. Use --ll option to specify linelist.'
+    #ll = path + ll #input spectrum (text file)
+    
+    if args.z is not None:
+        z = float(args.z)
+        print 'Redshift=', z
+    else:
+        z = 0.
+        print 'Redshift not specified. Using default z=', 0, '. Use --z option to specify redshift.'
+
+    if args.xmin is not None:
+        xmin = float(args.xmin)
+        print 'Starting wavelength=', xmin, 'A'
+    else:
+        xmin = -1
+    
+    if args.xmax is not None:
+        xmax = float(args.xmax)
+        print 'Ending wavelength=', xmax, 'A'
+    else:
+        xmax = -1 #-ve to span full range
+
+    if args.ymin is not None:
+        ymin = float(args.ymin)
+        print 'Lower limit on y-axis=', ymin
+    else:
+        ymin = 'NONE'
+    
+    if args.ymax is not None:
+        ymax = float(args.ymax)
+        print 'Upper limit on y-axis=', ymax
+    else:
+        ymax = 'NONE'
+    
     mylog = open('mysplot_log','w')
-    ymin, ymax = ['NONE']*2
     #-----------------Reading in the line list & spectrum------------------------------------------------
     list = readlist(ll)
     wz_full, fl_full, er_full = readspec(inp)
@@ -422,7 +485,7 @@ if __name__ == '__main__':
     fl_full = shiftflux(fl_full, const)
     er_full = shiftflux(er_full, const)
     printinstruction(c, inp, xmin, xmax)
-    makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const)
+    makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin=ymin, ymax=ymax)
     #plt.close()
     #mylog.close()
 '''
