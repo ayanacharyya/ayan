@@ -129,11 +129,11 @@ def open_esi_spectrum(infile, getclean=True) :
     '''
     sp =  pd.read_table(infile, delim_whitespace=True, comment="#", header=0)#, names=names)
     sp.rename(columns= {'obswave'  : 'wave'}, inplace=True)
-    sp['fnu'] = sp['fnu'].astype(np.float64)   #force to be a float, not a str
-    sp['fnu_u'] = sp['fnu_u'].astype(np.float64)   #force to be a float, not a str
+    sp['flam'] = sp['flam'].astype(np.float64)   #force to be a float, not a str
+    sp['flam_u'] = sp['flam_u'].astype(np.float64)   #force to be a float, not a str
     sp['wave'] = sp['wave'].astype(np.float64)   #force to be a float, not a str
-    sp['flam']     = jrr.spec.fnu2flam(sp.wave, sp.fnu)          # convert fnu to flambda
-    sp['flam_u']   = jrr.spec.fnu2flam(sp.wave, sp.fnu_u)
+    sp['fnu']     = jrr.spec.flam2fnu(sp.wave, sp.flam)          # convert fnu to flambda
+    sp['fnu_u']   = jrr.spec.flam2fnu(sp.wave, sp.flam_u)
     if getclean:
         sp.badmask = sp.badmask.astype(bool)
         sp = sp[~sp['badmask']]
@@ -192,11 +192,11 @@ def calc_schneider_EW(sp, resoln, plotit = False):
     w = sp.wave.values
     f = (sp.flam/sp.flam_autocont).values
     #--normalised error spectrum for EW limit----
-    unorm = (sp.flam_u/sp.flam_autocont).values
+    unorm = (sp.flam_u/sp.flam_autocont).values #normalised flux error
     func_u = interp1d(w, unorm, kind='linear')
-    uinorm = func_u(w)
+    uinorm = func_u(w) #interpolated normalised flux error
     #---------------------------
-    disp = np.concatenate(([np.diff(w)[0]],np.diff(w)))
+    disp = np.concatenate(([np.diff(w)[0]],np.diff(w))) #disperion array
     n = len(w)
     lim = 3.
     N = 2.
@@ -208,27 +208,31 @@ def calc_schneider_EW(sp, resoln, plotit = False):
         P = [a*exp(-((disp[ii]*(j0-j))**2)/(2*c**2)) for j in range(2*j0+1)]
         j1 = max(1,j0-ii)
         j2 = min(2*j0, j0+(n-1)-ii)
+        #For reference of following equations, please see 1st and 3rd equation of section 6.2 of Schneider et al. 1993.
+        #The 2 quantities on the left side of those equations correspond to 'EW' and 'signorm_int' respectively which subsequently become 'W_interp' and 'W_u_interp'
         EW.append(disp[ii]*np.sum(P[j]*(f[ii+j-j0]-1.)for j in range(j1, j2+1))/np.sum(P[j]**2 for j in range(j1, j2+1)))
         signorm_int.append(disp[ii]*np.sqrt(np.sum(P[j]**2*uinorm[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
         #sig.append(disp[ii]*np.sqrt(np.sum(P[j]**2*unorm[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
     func_ew = interp1d(w, EW, kind='linear')
-    W = func_ew(w)
-    sp['W_interp'] = pd.Series(W)
-    sp['W_u_interp'] = pd.Series(signorm_int)
+    W = func_ew(w) #interpolating EW
+    sp['W_interp'] = pd.Series(W) #'W_interp' is the result of interpolation of the weighted rolling average of the EW (based on the SSF chosen)
+    sp['W_u_interp'] = pd.Series(signorm_int) #'W_u_interp' is 1 sigma error in EW derived by weighted rolling average of interpolated flux error.
     #-----plot if you want to see-------------------
     if plotit:
+        fig = plt.figure(figsize=(14,6))
         plt.plot(w, f, c='blue', label='normalised flux')
-        plt.plot(w, u, c='gray', label='flux error')
+        plt.plot(w, unorm, c='gray', label='flux error')
         plt.plot(w, W, c='red', label='interpolated EW')
         plt.plot(w, np.zeros(len(w)), c='g', linestyle='--', label='zero level')
-        plt.plot(w, np.multiply(lim,sig_int), c='g', label=str(int(lim))+'sig EW err')
-        plt.plot(w, -np.multiply(lim,sig_int), c='g')
+        plt.plot(w, np.multiply(lim,signorm_int), c='g', label=str(int(lim))+'sig EW err')
+        plt.plot(w, -np.multiply(lim,signorm_int), c='g')
         plt.xlim(4200,4600)
         plt.ylim(-1,3)
         plt.xlabel('Observed wavelength (A)')
         plt.legend()
         plt.show(block=False)
-    
+    return 0 #just so the function returns something
+
 #-------------Fucntion for updating popt, pcov when some parameters are fixed----------------------------
 #-------------so that eventually update_dataframe() gets popt, pcov of usual shape----------------------------
 def update_p(popt, pcov, pos, popt_insert, n, pcov_insert=0.):
@@ -306,6 +310,8 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, de
         zz_u = np.sqrt(pcov[2][2])*(1.+l.zz)/l.wave
         f_line = np.sqrt(2*np.pi)*popt[1]*popt[3]*cont #total flux = integral of guassian fit
         f_line_u = np.sqrt(2*np.pi*(pcov[1][1]*popt[3]**2 + pcov[3][3]*popt[1]**2))*cont #multiplied with cont at that point in wavelength to get units back in ergs/s/cm^2
+        #this is where all the parameters of a measured line is put into the final dataframe (called line_table in EW_fitter.py)
+        #please note that variables EWr_3sig_lim and fl_3sig_lim here are referred to as Ewr_Suplim and f_Suplim respectively, in EW_fitter.py
         row = np.array([label, l.label, ("%.4f" % l.wave), ("%.4f" % float(l.wave/(1+l.zz))), l.type, \
         ("%.4f" % EWr_fit), ("%.4f" % EWr_fit_u), ("%.4f" % EWr_sum), ("%.4f" % EWr_sum_u), ("%.4e" % f_line),\
         ("%.4e" % f_line_u), ("%.4f" % EWr_3sig_lim), ("%.4e" % fl_3sig_lim), ("%.4f" % popt[0]), ("%.4f" % popt[1]), \
@@ -329,6 +335,34 @@ def plot_gaus(sptemp, popt, cen, tot_nu, detection=True):
     plt.axvline(cen, c='blue', lw=0.5)
     tot_nu += gauss_curve_nu
     return tot_nu
+
+#-------Functions to correct for extinction-------------
+def kappa(w, i):
+    if i==0:
+        k = 0
+    elif i==1:
+        k = 2.659*(-2.156+1.509/w-0.198/(w**2)+0.011/(w**3))+4.05
+    elif i==2:
+        k = 2.659*(-1.857 + 1.040/w) + 4.05
+    return k
+#------------------
+def extinct(wave, flux, flux_u, E=0.2, E_u = 0.2, inAngstrom=True): #E(B-V)=0.2 +/- 0.2 for rcs0327-knotE using Hgamma/Hbeta from NIRSPEC-3
+    if inAngstrom: wave/=1e4 #to convert to micron
+    wbreaks = [0.12, 0.63, 2.2]
+    flux_redcor,flux_redcor_u=[],[]
+    for i,wb in enumerate(wbreaks):
+        w = wave[np.where(wave<wb)[0]]
+        f = flux[np.where(wave<wb)[0]]
+        f_u = flux_u[np.where(wave<wb)[0]]
+        k = kappa(w,i)
+        fredcor = np.multiply(f,10**(0.4*k*E))
+        fredcor_u = np.multiply(10**(0.4*k*E),np.sqrt(f_u**2 + (f*0.4*k*np.log(10)*E_u)**2)) #error propagation
+        flux_redcor.extend(fredcor)
+        flux_redcor_u.extend(fredcor_u)
+        ind = np.where(wave<wb)[0][-1] if len(np.where(wave<wb)[0]) > 0 else -1
+        wave = wave[ind+1:]
+        flux = flux[ind+1:]
+    return flux_redcor, flux_redcor_u
 
 #-------Function to calculate one sigma error in flux at certain wavelength--------
 #------------------NOT USED ANYMORE-----------------------------
