@@ -1,5 +1,5 @@
 '''
-Collection of python routines by Ayan Acharyya applicable on mage sample, mainly to be used by the code EW_fitter.py
+Collection of python routines by Ayan acharyya applicable on mage sample, mainly to be used by the code EW_fitter.py
 to fit gaussian profiles to spectral lines.
 Started July 2016
 '''
@@ -77,7 +77,7 @@ def makelist(linelist):
             continue
         row = np.array([''+label.replace(' ', ''), LL[(LL['lab1']+' '+LL['lab2']).eq(label) & LL['type'].ne('INTERVE')].restwav.values[0], t, 'Leitherer'])
         line_full.loc[len(line_full)] = row
-    fout = 'labframe.shortlinelist_esi'
+    fout = 'labframe.shortlinelist'
     line_full.to_csv(fout, sep='\t',mode ='a', index=None)
 
     fn = open('/Users/acharyya/Mappings/lab/targetlines.txt','r')
@@ -215,8 +215,10 @@ def calc_schneider_EW(sp, resoln, plotit = False):
         #sig.append(disp[ii]*np.sqrt(np.sum(P[j]**2*unorm[ii+j-j0]**2for j in range(j1, j2+1)))/np.sum(P[j]**2 for j in range(j1, j2+1)))
     func_ew = interp1d(w, EW, kind='linear')
     W = func_ew(w) #interpolating EW
-    sp['W_interp'] = pd.Series(W) #'W_interp' is the result of interpolation of the weighted rolling average of the EW (based on the SSF chosen)
-    sp['W_u_interp'] = pd.Series(signorm_int) #'W_u_interp' is 1 sigma error in EW derived by weighted rolling average of interpolated flux error.
+    #sp['W_interp'] = pd.Series(W) #'W_interp' is the result of interpolation of the weighted rolling average of the EW (based on the SSF chosen)
+    #sp['W_u_interp'] = pd.Series(signorm_int) #'W_u_interp' is 1 sigma error in EW derived by weighted rolling average of interpolated flux error.
+    sp['W_interp'] = W
+    sp['W_u_interp'] = signorm_int
     #-----plot if you want to see-------------------
     if plotit:
         fig = plt.figure(figsize=(14,6))
@@ -245,6 +247,25 @@ def update_p(popt, pcov, pos, popt_insert, n, pcov_insert=0.):
             pcov = np.insert(np.insert(pcov,pos+4*yy,pcov[0], axis=0),pos,np.insert(pcov[:,0],pos+4*yy,pcov_insert), axis=1)
     return popt, pcov
 
+#-------------Fucntion for deciding in a line is detected or not----------------------------
+def isdetect(EW_signi, f_signi, f_SNR, EW_thresh=None, f_thresh=None, f_SNR_thresh=None):
+    if EW_thresh is not None:
+        if EW_signi >= EW_thresh:
+            if f_SNR_thresh is not None:                    #will check if f_SNR is above threshold if threshold is present
+                if f_SNR >= f_SNR_thresh: return True
+                else: return False
+            else: return True
+        else: return False
+    elif f_thresh is not None:
+        if f_signi >= f_thresh:
+            if f_SNR_thresh is not None:                    #will check if f_SNR is above threshold if threshold is present
+                if f_SNR >= f_SNR_thresh: return True
+                else: return False
+            else: return True
+        else: return False
+    else:
+        return isdetect(EW_signi, f_signi, f_SNR, EW_thresh=3.) #if neither f thresholds specified, re-calling isdetect() with a default EW_thresh=3
+
 #-------------Fucntion for fitting any number of Gaussians----------------------------
 def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
     global v_maxwidth, line_type_dic
@@ -270,13 +291,19 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
         p_init, lbound, ubound =[],[],[]
         cont = 1.
         for xx in range(0, len(l)):
-            zz_allow = (2000./3e5) + 3.*l.zz_err.values[xx] if 'Ly-alpha' in l.label.values[xx] else 3.*l.zz_err.values[xx] # increasing allowance of z (by 2000 km/s) if the line to be fit is Ly-alpha
+            if 'Ly-alpha' in l.label.values[xx]:
+                zz_allow = (2000./3e5) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 2000 km/s) if the line to be fit is Ly-alpha
+            elif 'MgII' in l.label.values[xx]:
+                zz_allow = (300./3e5) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 300 km/s) if the line to be fit is MgII2797 lines, due to wind
+            else:
+                 zz_allow = 3.*l.zz_err.values[xx]
             fl = sptemp[sptemp['wave']>=l.wave.values[xx]].flam.values[0]-cont
             p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), v_maxwidth*gf2s/3e5])])#2.*gf2s/resoln])
-            lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln-3.*dresoln)])
+            lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
             ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*(1.+zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*v_maxwidth*gf2s/3e5])
         popt, pcov = curve_fit(lambda x, *p: s.fixcont_gaus(x, cont, len(l), *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
         popt, pcov = update_p(popt, pcov, 0, cont, len(l))
+    
     #fitting all 4 parameters, nothing fixed
     else:
         p_init, lbound, ubound = [ly[0]],[-np.inf],[np.inf]
@@ -291,7 +318,7 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
     return popt, pcov
     
 #-------------Function for updating the linelist data frame by adding each line------------
-def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, detection=True):
+def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, fit_successful=True, EW_thresh=None, f_thresh=None, f_SNR_thresh=None):
     global line_type_dic
     #------calculating EW using simple summation------
     wv, f, f_c, f_u = s.cutspec(sp.wave, sp.flam*sp.flam_autocont, sp.flam_autocont, sp.flam_u*sp.flam_autocont, l.wave*(1.-2.*gs2f/(resoln-dresoln)),  l.wave*(1.+2.*gs2f/(resoln-dresoln))) # +/- 2 sigma ->FWHM
@@ -302,7 +329,7 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, de
     EWr_3sig_lim = -1.*sign*3.*(sp.loc[sp.wave >= l.wave].W_u_interp.values[0])/(1+l.zz) #dividing by (1+z) as the dataframe has observed frame EW limits
     fl_3sig_lim = -1.*EWr_3sig_lim*sp.loc[sp.wave >= l.wave].flam_autocont.values[0]
     #--------------------------------------------------
-    if detection:
+    if fit_successful:
         cont = sp.loc[sp.wave >= popt[2]].flam_autocont.values[0] #continuum value at the line centre
         EWr_fit = np.sqrt(2*np.pi)*(-1.)*popt[1]*popt[3]/(popt[0]*(1.+l.zz)) #convention: -ve EW is EMISSION
         EWr_fit_u = np.sqrt(2*np.pi*(pcov[1][1]*(popt[3]/popt[0])**2 + pcov[3][3]*(popt[1]/popt[0])**2 + pcov[0][0]*(popt[1]*popt[3]/popt[0]**2)**2))/(1.+l.zz)
@@ -310,33 +337,40 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, de
         zz_u = np.sqrt(pcov[2][2])*(1.+l.zz)/l.wave
         f_line = np.sqrt(2*np.pi)*popt[1]*popt[3]*cont #total flux = integral of guassian fit
         f_line_u = np.sqrt(2*np.pi*(pcov[1][1]*popt[3]**2 + pcov[3][3]*popt[1]**2))*cont #multiplied with cont at that point in wavelength to get units back in ergs/s/cm^2
+        EW_signi = 3.*EWr_fit/EWr_3sig_lim # computing significance of detection in EW
+        f_signi = 3.*f_line/fl_3sig_lim # computing significance of detection in flux
+        f_SNR = f_line/f_line_u
+        detection = isdetect(EW_signi, f_signi, f_SNR, EW_thresh=EW_thresh, f_thresh=f_thresh, f_SNR_thresh=f_SNR_thresh)
         #this is where all the parameters of a measured line is put into the final dataframe (called line_table in EW_fitter.py)
         #please note that variables EWr_3sig_lim and fl_3sig_lim here are referred to as Ewr_Suplim and f_Suplim respectively, in EW_fitter.py
         row = np.array([label, l.label, ("%.4f" % l.wave), ("%.4f" % float(l.wave/(1+l.zz))), l.type, \
         ("%.4f" % EWr_fit), ("%.4f" % EWr_fit_u), ("%.4f" % EWr_sum), ("%.4f" % EWr_sum_u), ("%.4e" % f_line),\
-        ("%.4e" % f_line_u), ("%.4f" % EWr_3sig_lim), ("%.4e" % fl_3sig_lim), ("%.4f" % popt[0]), ("%.4f" % popt[1]), \
-        ("%.4f" % popt[2]), ("%.4f" % np.sqrt(pcov[2][2])), ("%.4f" % popt[3]), ("%.4f" % zz), ("%.4f" % zz_u)])
+        ("%.4e" % f_line_u), ("%.4f" % EWr_3sig_lim), ("%.3f" % EW_signi), ("%.4e" % fl_3sig_lim), ("%.3f" % f_signi), ("%.4f" % popt[0]), ("%.4f" % popt[1]), \
+        ("%.4f" % popt[2]), ("%.4f" % np.sqrt(pcov[2][2])), ("%.4f" % popt[3]), ("%.5f" % zz), ("%.5f" % zz_u)])
     else:
+        detection = False
         row = np.array([label, l.label, ("%.4f" % l.wave), ("%.4f" % float(l.wave/(1+l.zz))), l.type, np.nan, np.nan, \
         ("%.4f" % EWr_sum), ("%.4f" % EWr_sum_u), np.nan, np.nan, ("%.4f" % EWr_3sig_lim),\
         ("%.4e" % fl_3sig_lim), np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
     df.loc[len(df)] = row
-    
+    return detection
 #-------Function to plot the gaussians-------------
-def plot_gaus(sptemp, popt, cen, tot_nu, detection=True):
+def plot_gaus(sptemp, popt, cen, label, tot_nu, detection=True, silent = True):
     gauss_curve_lam = np.multiply(s.gaus1(sptemp.wave,*popt),sptemp.flam_autocont)
     gauss_curve_nu = jrr.spec.flam2fnu(sptemp.wave, gauss_curve_lam)
     if detection:
-        plt.plot(sptemp.wave, gauss_curve_nu, color='red', linewidth=1, linestyle = '--')
+        plt.plot(sptemp.wave, gauss_curve_nu, color='red', linewidth=1, linestyle = '-')
         plt.axvline(popt[2], c='r', lw=0.5)
+        if not silent: print 'Detected', label
     else:
         plt.plot(sptemp.wave, gauss_curve_nu, color='k', linewidth=1, linestyle = '--')
-        plt.axvline(popt[2], c='g', lw=1)
+        plt.axvline(popt[2], c='k', lw=1)
+        if not silent: print 'NOT detected', label
     plt.axvline(cen, c='blue', lw=0.5)
     tot_nu += gauss_curve_nu
     return tot_nu
 
-#-------Functions to correct for extinction-------------
+#-------Functions to correct for extinction for rcs0327-E ONLY-------------
 def kappa(w, i):
     if i==0:
         k = 0
@@ -345,23 +379,23 @@ def kappa(w, i):
     elif i==2:
         k = 2.659*(-1.857 + 1.040/w) + 4.05
     return k
-#------------------
-def extinct(wave, flux, flux_u, E=0.2, E_u = 0.2, inAngstrom=True): #E(B-V)=0.2 +/- 0.2 for rcs0327-knotE using Hgamma/Hbeta from NIRSPEC-3
+#------------------Function to calculate extinction and de-redden fluxes-------------
+def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True): #E(B-V)=0.2 +/- 0.2 for rcs0327-knotE using Hgamma/Hbeta from NIRSPEC-3
     if inAngstrom: wave/=1e4 #to convert to micron
     wbreaks = [0.12, 0.63, 2.2]
     flux_redcor,flux_redcor_u=[],[]
     for i,wb in enumerate(wbreaks):
-        w = wave[np.where(wave<wb)[0]]
-        f = flux[np.where(wave<wb)[0]]
-        f_u = flux_u[np.where(wave<wb)[0]]
+        w = wave.iloc[np.where(wave<wb)[0]]
+        f = flux.iloc[np.where(wave<wb)[0]]
+        f_u = flux_u.iloc[np.where(wave<wb)[0]]
         k = kappa(w,i)
         fredcor = np.multiply(f,10**(0.4*k*E))
         fredcor_u = np.multiply(10**(0.4*k*E),np.sqrt(f_u**2 + (f*0.4*k*np.log(10)*E_u)**2)) #error propagation
         flux_redcor.extend(fredcor)
         flux_redcor_u.extend(fredcor_u)
         ind = np.where(wave<wb)[0][-1] if len(np.where(wave<wb)[0]) > 0 else -1
-        wave = wave[ind+1:]
-        flux = flux[ind+1:]
+        wave = wave.iloc[ind+1:]
+        flux = flux.iloc[ind+1:]
     return flux_redcor, flux_redcor_u
 
 #-------Function to calculate one sigma error in flux at certain wavelength--------
@@ -471,8 +505,8 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
                 for xx in range(0,c):
                     ind = line.index.values[(kk-1) - c + 1 + xx]
                     #det_3sig, wt_mn, er_wt_mn = check_3sig_det(sp2, line.loc[ind], popt[4*xx:4*(xx+1)], resoln, args=args) # check if 3 sigma detection; NOT REQUIRED anymore
-                    update_dataframe(sp2, label, line.loc[ind], df, resoln, dresoln, popt= popt[4*xx:4*(xx+1)], pcov= pcov[4*xx:4*(xx+1),4*xx:4*(xx+1)], detection=True)
-                    tot_nu = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, tot_nu, detection=True)
+                    detection = update_dataframe(sp2, label, line.loc[ind], df, resoln, dresoln, popt= popt[4*xx:4*(xx+1)], pcov= pcov[4*xx:4*(xx+1),4*xx:4*(xx+1)], fit_successful=True)
+                    tot_nu = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, line.loc[ind].label, tot_nu, detection=detection, silent = args.silent)
                 if c > 1:
                         plt.plot(sp2.wave, np.subtract(tot_nu,(c-1.)*jrr.spec.flam2fnu(sp2.wave, np.multiply(popt[0],sp2.flam_autocont))), color='green', linewidth=2)
                 if not args.silent:
@@ -484,7 +518,7 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
                     plt.axvline(line.loc[ind].wave, c='k', lw=1)
                     #wt_mn, er_wt_mn = calc_1sig_err(sp2, line.loc[ind].wave, resoln) #NOT REQUIRED anymore
                     try:
-                        update_dataframe(sp2, label, line.loc[ind], df, resoln, dresoln, detection=False)
+                        dummy = update_dataframe(sp2, label, line.loc[ind], df, resoln, dresoln, fit_successful=False)
                     except:
                         pass
                 if not args.silent:
