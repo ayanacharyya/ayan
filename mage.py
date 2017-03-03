@@ -112,6 +112,8 @@ def flag_skylines(sp) :
 def fit_autocont(sp_orig, zz_sys, line_path, filename):
     if 'stack' in filename:
         linelist = line_path+'stacked.linelist'
+    elif 'new-format' in filename:
+        linelist = line_path+'stacked.linelist'
     elif 'esi' in filename:
         linelist = line_path+'stacked.linelist' 
     else:
