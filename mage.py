@@ -357,20 +357,25 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, fi
     df.loc[len(df)] = row
     return detection
 #-------Function to plot the gaussians-------------
-def plot_gaus(sptemp, popt, cen, label, tot_nu, detection=True, silent = True):
+def plot_gaus(sptemp, popt, cen, label, zz, tot_fl, detection=True, silent = True, plotfnu=False):
     gauss_curve_lam = np.multiply(s.gaus1(sptemp.wave,*popt),sptemp.flam_autocont)
     gauss_curve_nu = jrr.spec.flam2fnu(sptemp.wave, gauss_curve_lam)
     if detection:
-        plt.plot(sptemp.wave, gauss_curve_nu, color='red', linewidth=1, linestyle = '-')
+        if not plotfnu: plt.plot(sptemp.wave, gauss_curve_lam, color='red', linewidth=1, linestyle = '-')
+        else: plt.plot(sptemp.wave, gauss_curve_nu, color='red', linewidth=1, linestyle = '-')
         plt.axvline(popt[2], c='r', lw=0.5)
+        plt.text(popt[2]+1, plt.gca().get_ylim()[-1]*0.9, label, color='r', rotation=90)
         if not silent: print 'Detected', label
     else:
-        plt.plot(sptemp.wave, gauss_curve_nu, color='k', linewidth=1, linestyle = '--')
+        if not plotfnu: plt.plot(sptemp.wave, gauss_curve_lam, color='k', linewidth=1, linestyle = '--')
+        else: plt.plot(sptemp.wave, gauss_curve_nu, color='k', linewidth=1, linestyle = '--')
         plt.axvline(popt[2], c='k', lw=1)
+        plt.text(popt[2]+1, plt.gca().get_ylim()[-1]*0.9, label, color='k', rotation=90)
         if not silent: print 'NOT detected', label
     plt.axvline(cen, c='blue', lw=0.5)
-    tot_nu += gauss_curve_nu
-    return tot_nu
+    if not plotfnu: tot_fl += gauss_curve_lam
+    else: tot_fl += gauss_curve_nu
+    return tot_fl
 
 #-------Functions to correct for extinction for rcs0327-E ONLY-------------
 def kappa(w, i):
@@ -382,7 +387,7 @@ def kappa(w, i):
         k = 2.659*(-1.857 + 1.040/w) + 4.05
     return k
 #------------------Function to calculate extinction and de-redden fluxes-------------
-def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True): #E(B-V)=0.2 +/- 0.2 for rcs0327-knotE using Hgamma/Hbeta from NIRSPEC-3
+def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True):
     if inAngstrom: wave/=1e4 #to convert to micron
     wbreaks = [0.12, 0.63, 2.2]
     flux_redcor,flux_redcor_u=[],[]
@@ -398,6 +403,7 @@ def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True): #E(B-V)=0.2 +/- 0.2 fo
         ind = np.where(wave<wb)[0][-1] if len(np.where(wave<wb)[0]) > 0 else -1
         wave = wave.iloc[ind+1:]
         flux = flux.iloc[ind+1:]
+        flux_u = flux_u.iloc[ind+1:]
     return flux_redcor, flux_redcor_u
 
 #-------Function to calculate one sigma error in flux at certain wavelength--------
@@ -503,14 +509,15 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
             #med_bin_flux, mad_bin_flux = calc_detec_lim(sp_orig, line[kk-c:kk], resoln, nbin, args=args) #NOT REQUIRED anymore
             try:
                 popt, pcov = fit(sp2, line[kk-c:kk], resoln, dresoln, fix_cont=fix_cont, fix_cen=fix_cen)
-                tot_nu = np.zeros(len(sp2))
+                tot_fl = np.zeros(len(sp2))
                 for xx in range(0,c):
                     ind = line.index.values[(kk-1) - c + 1 + xx]
                     #det_3sig, wt_mn, er_wt_mn = check_3sig_det(sp2, line.loc[ind], popt[4*xx:4*(xx+1)], resoln, args=args) # check if 3 sigma detection; NOT REQUIRED anymore
                     detection = update_dataframe(sp2, label, line.loc[ind], df, resoln, dresoln, popt= popt[4*xx:4*(xx+1)], pcov= pcov[4*xx:4*(xx+1),4*xx:4*(xx+1)], fit_successful=True)
-                    tot_nu = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, line.loc[ind].label, tot_nu, detection=detection, silent = args.silent)
+                    tot_fl = plot_gaus(sp2, popt[4*xx:4*(xx+1)], line.loc[ind].wave, line.loc[ind].label, line.loc[ind].zz, tot_fl, detection=detection, silent = args.silent, plotfnu = args.plotfnu)
                 if c > 1:
-                        plt.plot(sp2.wave, np.subtract(tot_nu,(c-1.)*jrr.spec.flam2fnu(sp2.wave, np.multiply(popt[0],sp2.flam_autocont))), color='green', linewidth=2)
+                        if not args.plotfnu: plt.plot(sp2.wave, np.subtract(tot_fl,(c-1.)*np.multiply(popt[0],sp2.flam_autocont)), color='green', linewidth=2)
+                        else: plt.plot(sp2.wave, np.subtract(tot_fl,(c-1.)*jrr.spec.flam2fnu(sp2.wave, np.multiply(popt[0],sp2.flam_autocont))), color='green', linewidth=2)
                 if not args.silent:
                     print 'done above fitting'
             
