@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore")
 import re
 import argparse as ap
 parser = ap.ArgumentParser(description="observables generating tool")
+import pandas as pd
 #-------------Choosing color according to line strength----------
 def choosecol(n):
     if n == 1:
@@ -49,22 +50,31 @@ def readlist(ll, isstacked = False):
     list = sorted(list, key=itemgetter(1))
     return list
 #------------Reading input spectra-------------------------------
-def readspec(inp):
-    wz,fl,er = [],[],[]
-    fn = open(inp, 'r')
-    lines = fn.readlines()
-    for line in lines:
-        if len(line.split())>1:
-            wl = line.split()[0]
-            t = line.split()[1]
-            if len(line.split()) > 2:
-                e = line.split()[2]
-            else:
-                e=0
-            if isfloat(wl) and not np.isnan(float(t)):
-                wz.append(float(wl))
-                fl.append(float(t))
-                er.append(float(e))
+def readspec(inp, clean=True):
+    try:
+        spec =  pd.read_table(inp, delim_whitespace=True, comment="#", header=0, dtype=np.float64)
+        if clean and 'badmask' in spec:
+            spec.badmask = spec.badmask.astype(bool)
+            spec = spec[~spec.badmask]
+        wz = spec['obswave'].values
+        fl = spec['fnu'].values
+        er = spec['fnu_u'].values
+    except:
+        wz,fl,er = [],[],[]
+        fn = open(inp, 'r')
+        lines = fn.readlines()
+        for line in lines:
+            if len(line.split())>1:
+                wl = line.split()[0]
+                t = line.split()[1]
+                if len(line.split()) > 2:
+                    e = line.split()[2]
+                else:
+                    e=0
+                if isfloat(wl) and not np.isnan(float(t)):
+                    wz.append(float(wl))
+                    fl.append(float(t))
+                    er.append(float(e))
     return wz, fl, er
 #-----------Reading input stacked mage spectra----------------------------
 def readstackedmagespec(inp):
@@ -259,7 +269,7 @@ def onpress(event):
     plt.draw()
 #-------------------Function to create the plot--------------------------------------------
 def makeplot(wz, fl, er, xmin, xmax, list, fig, const=1, a1=1, b1=1, c1=1, er_j = 'NONE', ymin ='NONE', ymax='NONE'):
-    global ax, inp
+    global ax, inp, toggle_screen
     labels=[]
     ticks=[]
     li = [a[1] for a in list]
@@ -311,6 +321,9 @@ A new figure will pop up with normalised spectra within a region covered by your
         labels.append(list[ii][0]+str(list[ii][1]))
     ax2.set_xticks(ticks)
     ax2.set_xticklabels(labels, rotation = 45, ha='left', fontsize='small')
+    if toggle_screen: #to display figure in 2nd display monitor
+        figManager = plt.get_current_fig_manager()
+        figManager.window.move(1600, 300)
     return fig
 #-----------Make interactive plot------------------------------
 def makeplotint(wz_full, fl_full, er_full, xmin, xmax, c, list, const, ymin ='NONE', ymax='NONE'):
@@ -394,7 +407,7 @@ def printinstruction(c, inp, xmin, xmax):
 #-----------Main function starts------------------
 if __name__ == '__main__':
     #-----------Declaring arrays------------------------------
-    global k, lx, ly, ax, popt, x, list, c, xmin, xmax, wz_full, fl_full, c, ymin, ymax, inp
+    global k, lx, ly, ax, popt, x, list, c, xmin, xmax, wz_full, fl_full, c, ymin, ymax, inp, toggle_screen
     k = 0
     x=[0 for ii in xrange(2)]
     lx=[]
@@ -405,6 +418,10 @@ if __name__ == '__main__':
     parser.set_defaults(fitgauss=False)
     parser.add_argument('--fitcont', dest='fitcont', action='store_true')
     parser.set_defaults(fitcont=False)
+    parser.add_argument('--notclean', dest='notclean', action='store_true')
+    parser.set_defaults(notclean=False)
+    parser.add_argument('--toggle_screen', dest='toggle_screen', action='store_true')
+    parser.set_defaults(toggle_screen=False)
 
     parser.add_argument("--path")
     parser.add_argument("--file")
@@ -440,7 +457,7 @@ if __name__ == '__main__':
         ll = args.ll
         print 'Using linelist=', ll
     else:
-        ll = 'line_list' #which spectrum to use
+        ll = '/Users/acharyya/Work/astro/mageproject/ayan/line_list' #which spectrum to use
         print 'Line list not specified. Using default', ll, '. Use --ll option to specify linelist.'
     #ll = path + ll #input spectrum (text file)
     
@@ -475,10 +492,14 @@ if __name__ == '__main__':
     else:
         ymax = 'NONE'
     
+    toggle_screen = args.toggle_screen
+    if toggle_screen:
+        plt.switch_backend('QT4Agg')
+    
     mylog = open('mysplot_log','w')
     #-----------------Reading in the line list & spectrum------------------------------------------------
     list = readlist(ll)
-    wz_full, fl_full, er_full = readspec(inp)
+    wz_full, fl_full, er_full = readspec(inp, clean=not args.notclean)
     const = np.median(fl_full)
     if const > 0. and const < 10.:
         const = 1.
