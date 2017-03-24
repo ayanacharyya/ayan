@@ -3,9 +3,11 @@ Collection of python routines by Ayan acharyya applicable on mage sample, mainly
 to fit gaussian profiles to spectral lines.
 Started July 2016
 '''
+import os
+HOME = os.getenv('HOME')+'/'
 import sys
-sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools')
-sys.path.append('/Users/acharyya/Dropbox/MagE_atlas/Tools/Contrib')
+sys.path.append(HOME+'Dropbox/MagE_atlas/Tools')
+sys.path.append(HOME+'Dropbox/MagE_atlas/Tools/Contrib')
 import jrr
 import splot_util as s
 import numpy as np
@@ -111,7 +113,7 @@ def flag_skylines(sp) :
 #-------------Function to fit autocont using jrr.mage.auto_fit.cont------------------
 def fit_autocont(sp_orig, zz_sys, line_path, filename):
     if 'stack' in filename:
-        linelist = line_path+'stacked.linelist'
+        linelist = line_path+'stacked.linelist' #to provide line list for jrr.mage.auto_fit_cont to mask out regions of the spectra
     elif 'new-format' in filename:
         linelist = line_path+'stacked.linelist'
     elif 'esi' in filename:
