@@ -335,7 +335,6 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, fi
     #--------------------------------------------------
     if fit_successful:
         cont = sp.loc[sp.wave >= popt[2]].flam_autocont.values[0] #continuum value at the line centre
-        print l.label, cont, popt, pcov #
         #Let a=continuum, b=height, c= mean, d=width of each gaussian. Then,
         #EW = constant * b*d/a. Assuming variance_aa = vaa and so on,
         #var_EW = (d/a)^2*vbb + (b/a)^2*vdd + (bd/a^2)^2*vaa + 2(bd/a^2)*(vbd - (d/a)*vba - (b/a)vda) * constant
