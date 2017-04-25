@@ -337,12 +337,14 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, fi
         cont = sp.loc[sp.wave >= popt[2]].flam_autocont.values[0] #continuum value at the line centre
         print l.label, cont, popt, pcov #
         #Let a=continuum, b=height, c= mean, d=width of each gaussian. Then,
-        #EW = const * b*d/a. Assuming variance_aa = vaa and so on,
-        #var_EW = (d/a)^2*vbb + (b/a)^2*vdd + (bd/a^2)^2*vaa + 2(bd/a^2)*(vbd - (d/a)*vba - (b/a)vda)
+        #EW = constant * b*d/a. Assuming variance_aa = vaa and so on,
+        #var_EW = (d/a)^2*vbb + (b/a)^2*vdd + (bd/a^2)^2*vaa + 2(bd/a^2)*(vbd - (d/a)*vba - (b/a)vda) * constant
         EWr_fit = np.sqrt(2*np.pi)*(-1.)*popt[1]*popt[3]/(popt[0]*(1.+l.zz)) #convention: -ve EW is EMISSION
         EWr_fit_u = np.sqrt(2*np.pi*(pcov[1][1]*(popt[3]/popt[0])**2 + pcov[3][3]*(popt[1]/popt[0])**2 + pcov[0][0]*(popt[1]*popt[3]/popt[0]**2)**2  + 2*(popt[1]*popt[3]/popt[0]**2)*(pcov[1][3] - (popt[3]/popt[0])*pcov[1][0] - (popt[1]/popt[0])*pcov[3][0]) ))/(1.+l.zz)
         zz = popt[2]*(1.+l.zz)/l.wave - 1.
         zz_u = np.sqrt(pcov[2][2])*(1.+l.zz)/l.wave
+        #f = constant * b*d,
+        #var_f = d^2*vbb + b^2*vdd + 2b*d*vbd * constant
         f_line = np.sqrt(2*np.pi)*popt[1]*popt[3]*cont #total flux = integral of guassian fit
         f_line_u = np.sqrt(2*np.pi*(pcov[1][1]*popt[3]**2 + pcov[3][3]*popt[1]**2 + 2*popt[1]*popt[3]*pcov[1][3]))*cont #multiplied with cont at that point in wavelength to get units back in ergs/s/cm^2
         EW_signi = 3.*EWr_fit/EWr_3sig_lim # computing significance of detection in EW
