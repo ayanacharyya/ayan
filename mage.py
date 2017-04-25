@@ -335,12 +335,16 @@ def update_dataframe(sp, label, l, df, resoln, dresoln, popt=None, pcov=None, fi
     #--------------------------------------------------
     if fit_successful:
         cont = sp.loc[sp.wave >= popt[2]].flam_autocont.values[0] #continuum value at the line centre
+        print l.label, cont, popt, pcov #
+        #Let a=continuum, b=height, c= mean, d=width of each gaussian. Then,
+        #EW = const * b*d/a. Assuming variance_aa = vaa and so on,
+        #var_EW = (d/a)^2*vbb + (b/a)^2*vdd + (bd/a^2)^2*vaa + 2(bd/a^2)*(vbd - (d/a)*vba - (b/a)vda)
         EWr_fit = np.sqrt(2*np.pi)*(-1.)*popt[1]*popt[3]/(popt[0]*(1.+l.zz)) #convention: -ve EW is EMISSION
-        EWr_fit_u = np.sqrt(2*np.pi*(pcov[1][1]*(popt[3]/popt[0])**2 + pcov[3][3]*(popt[1]/popt[0])**2 + pcov[0][0]*(popt[1]*popt[3]/popt[0]**2)**2))/(1.+l.zz)
+        EWr_fit_u = np.sqrt(2*np.pi*(pcov[1][1]*(popt[3]/popt[0])**2 + pcov[3][3]*(popt[1]/popt[0])**2 + pcov[0][0]*(popt[1]*popt[3]/popt[0]**2)**2  + 2*(popt[1]*popt[3]/popt[0]**2)*(pcov[1][3] - (popt[3]/popt[0])*pcov[1][0] - (popt[1]/popt[0])*pcov[3][0]) ))/(1.+l.zz)
         zz = popt[2]*(1.+l.zz)/l.wave - 1.
         zz_u = np.sqrt(pcov[2][2])*(1.+l.zz)/l.wave
         f_line = np.sqrt(2*np.pi)*popt[1]*popt[3]*cont #total flux = integral of guassian fit
-        f_line_u = np.sqrt(2*np.pi*(pcov[1][1]*popt[3]**2 + pcov[3][3]*popt[1]**2))*cont #multiplied with cont at that point in wavelength to get units back in ergs/s/cm^2
+        f_line_u = np.sqrt(2*np.pi*(pcov[1][1]*popt[3]**2 + pcov[3][3]*popt[1]**2 + 2*popt[1]*popt[3]*pcov[1][3]))*cont #multiplied with cont at that point in wavelength to get units back in ergs/s/cm^2
         EW_signi = 3.*EWr_fit/EWr_3sig_lim # computing significance of detection in EW
         f_signi = 3.*f_line/fl_3sig_lim # computing significance of detection in flux
         f_SNR = f_line/f_line_u
@@ -380,6 +384,7 @@ def plot_gaus(sptemp, popt, cen, label, zz, tot_fl, detection=True, silent = Tru
     return tot_fl
 
 #-------Functions to correct for extinction for rcs0327-E ONLY-------------
+#----From http://webast.ast.obs-mip.fr/hyperz/hyperz_manual1/node10.html website using Calzetti 2000 law----
 def kappa(w, i):
     if i==0:
         k = 0
