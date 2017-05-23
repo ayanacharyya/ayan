@@ -284,7 +284,7 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
             p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx]*2.*gf2s/resoln])
             lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0., l.wave.values[xx]*1.*gf2s/(resoln-3.*dresoln)])
             ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0., l.wave.values[xx]*v_maxwidth*gf2s/3e5])
-        popt, pcov = curve_fit(lambda x, *p: s.fixcen_gaus(x, l.wave.values, *p),sptemp['wave'],sptemp['flam'],p0=p_init, sigma = sptemp['flam_u'])
+        popt, pcov = curve_fit(lambda x, *p: s.fixcen_gaus(x, l.wave.values, *p),sptemp['wave'],sptemp['flam'],p0=p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
         for yy in range(0, len(l)-1):
             popt, pcov = update_p(popt, pcov, 3, popt[0], 1, pcov_insert=pcov[0][0])
             popt, pcov = update_p(popt, pcov, 2, l.wave.values, 1)
@@ -317,7 +317,7 @@ def fit(sptemp, l, resoln, dresoln, fix_cen = False, fix_cont=False):
             p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx], l.wave.values[xx]*2.*gf2s/resoln])
             lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0., l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln-3.*dresoln)])
             ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*(1.+zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*v_maxwidth*gf2s/3e5])
-        popt, pcov = curve_fit(lambda x, *p: s.gaus(x, len(l), *p),sptemp['wave'],sptemp['flam'],p0= p_init, sigma = sptemp['flam_u'])
+        popt, pcov = curve_fit(lambda x, *p: s.gaus(x, len(l), *p),sptemp['wave'],sptemp['flam'],p0= p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
         popt, pcov = update_p(popt, pcov, 4, popt[0], len(l)-1, pcov_insert=pcov[0][0])
     return popt, pcov
     
@@ -371,13 +371,13 @@ def plot_gaus(sptemp, popt, cen, label, zz, tot_fl, detection=True, silent = Tru
         if not plotfnu: plt.plot(sptemp.wave, gauss_curve_lam, color='red', linewidth=1, linestyle = '-')
         else: plt.plot(sptemp.wave, gauss_curve_nu, color='red', linewidth=1, linestyle = '-')
         plt.axvline(popt[2], c='r', lw=0.5)
-        plt.text(popt[2]+1, plt.gca().get_ylim()[-1]*0.9, label, color='r', rotation=90)
+        plt.text(popt[2]+0.1, plt.gca().get_ylim()[-1]*0.3, label, color='r', rotation=90)
         if not silent: print 'Detected', label
     else:
         if not plotfnu: plt.plot(sptemp.wave, gauss_curve_lam, color='k', linewidth=1, linestyle = '--')
         else: plt.plot(sptemp.wave, gauss_curve_nu, color='k', linewidth=1, linestyle = '--')
         plt.axvline(popt[2], c='k', lw=1)
-        plt.text(popt[2]+1, plt.gca().get_ylim()[-1]*0.9, label, color='k', rotation=90)
+        plt.text(popt[2]+0.1, plt.gca().get_ylim()[-1]*0.3, label, color='k', rotation=90)
         if not silent: print 'NOT detected', label
     plt.axvline(cen, c='blue', lw=0.5)
     if not plotfnu: tot_fl += gauss_curve_lam
@@ -385,19 +385,21 @@ def plot_gaus(sptemp, popt, cen, label, zz, tot_fl, detection=True, silent = Tru
     return tot_fl
 
 #-------Functions to correct for extinction for rcs0327-E ONLY-------------
+'''
 #----From http://webast.ast.obs-mip.fr/hyperz/hyperz_manual1/node10.html website using Calzetti 2000 law----
 def kappa(w, i):
     if i==0:
         k = 0
     elif i==1:
-        k = 2.659*(-2.156+1.509/w-0.198/(w**2)+0.011/(w**3))+4.05
+        k = 2.659*(-2.156+1.509/w-0.198/(w**2)+0.011/(w**3)) + Rv
     elif i==2:
-        k = 2.659*(-1.857 + 1.040/w) + 4.05
+        k = 2.659*(-1.857 + 1.040/w) + Rv
     return k
 #------------------Function to calculate extinction and de-redden fluxes-------------
 def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True):
     if inAngstrom: wave/=1e4 #to convert to micron
-    wbreaks = [0.12, 0.63, 2.2]
+    wbreaks = [0.12, 0.63, 2.2] #for Calzetti 2000 law
+    
     flux_redcor,flux_redcor_u=[],[]
     for i,wb in enumerate(wbreaks):
         w = wave.iloc[np.where(wave<wb)[0]]
@@ -412,6 +414,43 @@ def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True):
         wave = wave.iloc[ind+1:]
         flux = flux.iloc[ind+1:]
         flux_u = flux_u.iloc[ind+1:]
+    return flux_redcor, flux_redcor_u
+'''
+#----From Clayton Cardelli Mathis 1989 law----
+def kappa(x, i):
+    Rv = 3.1 #Clayton Cardelli Mathis 1989
+    x = np.array(x)
+    if i==1:
+        a = 0.574*x**1.61
+        b = -0.527*x**1.61
+    elif i==2:
+        y = x - 1.82
+        a = 1 + 0.17699*y - 0.50447*y**2 - 0.02427*y**3 + 0.72085*y**4 + 0.01979*y**5 - 0.77530*y**6 + 0.32999*y**7
+        b = 1.41338*y + 2.28305*y**2 + 1.07233*y**3 - 5.38434*y**4 - 0.62251*y**5 + 5.30260*y**6 - 2.09002*y**7
+    elif i==3:
+        a = 1.752 - 0.316*x - 0.104/((x-4.67)**2 + 0.341)
+        b = -3.090 + 1.825*x + 1.206/((x-4.62)**2 + 0.263)
+    elif i==4:
+        a = 1.752 - 0.316*x - 0.104/((x-4.67)**2 + 0.341) - 0.04473*(x-5.9)**2 - 0.009779*(x-5.9)**3
+        b = -3.090 + 1.825*x + 1.206/((x-4.62)**2 + 0.263) + 0.2130*(x-5.9)**2 - 0.1207*(x-5.9)**3
+    elif i==5:
+        a = -1.073 - 0.628*(x-8) + 0.137*(x-8)**2 - 0.070*(x-8)**3
+        b = 13.670 + 4.257*(x-8) - 0.420*(x-8)**2 + 0.374*(x-8)**3
+    return a*Rv + b
+#------------------Function to calculate extinction and de-redden fluxes-------------
+def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True):
+    if inAngstrom: wave/=1e4 #to convert to micron
+    x = 1./np.array(wave)
+    Rv = 3.1 
+    k = np.zeros(len(x))
+    k += kappa(x,1) * ((x >= 0.3) & (x <= 1.1))
+    k += kappa(x,2) * ((x > 1.1) & (x <= 3.3))
+    k += kappa(x,3) * ((x > 3.3) & (x < 5.9))
+    k += kappa(x,4) * ((x >= 5.9) & (x <= 8.))
+    k += kappa(x,5) * ((x >= 8.) & (x <= 10.))
+
+    flux_redcor = np.multiply(flux,10**(0.4*k*E))
+    flux_redcor_u = np.multiply(10**(0.4*k*E),np.sqrt(flux_u**2 + (flux*0.4*k*np.log(10)*E_u)**2)) #error propagation
     return flux_redcor, flux_redcor_u
 
 #-------Function to calculate one sigma error in flux at certain wavelength--------
@@ -487,9 +526,13 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
         nbin = int(args.nbin)
     else:
         nbin = 5
+    if args.ndlambda is not None:
+        ndlambda = float(args.ndlambda)
+    else:
+        ndlambda = 5.
     #-----------
     kk, c = 1, 0
-    ndlambda_left, ndlambda_right = [5.]*2 #how many delta-lambda wide will the window (for line fitting) be on either side of the central wavelength, default 5
+    ndlambda_left, ndlambda_right = [ndlambda]*2 #how many delta-lambda wide will the window (for line fitting) be on either side of the central wavelength, default 5
     try:
         c = 1
         first, last = [line.wave.values[0]]*2
@@ -500,10 +543,10 @@ def fit_some_EWs(line, sp, resoln, label, df, dresoln, sp_orig, args=None) :
     while kk <= len(line):
         center1 = last
         if kk == len(line):
-            center2 = 1e10 #insanely high number, required to plot last line
+            center2 = 1e10 #just an insanely high number, required to plot last line
         else:
             center2 = line.wave.values[kk]
-        if center2*(1. - 5./resoln) > center1*(1. + 5./resoln):
+        if center2*(1. - ndlambda_left/resoln) > center1*(1. + ndlambda_right/resoln):
             sp2 = sp[sp['wave'].between(first*(1.-ndlambda_left/resoln), last*(1.+ndlambda_right/resoln))]
             sp2.flam = sp2.flam/sp2.flam_autocont #continuum normalising by autocont
             sp2.flam_u = sp2.flam_u/sp2.flam_autocont #continuum normalising by autocont
