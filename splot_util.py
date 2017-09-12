@@ -2,13 +2,15 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import subprocess
-import sys
 from  astropy.io import ascii
 from scipy.optimize import curve_fit
 from scipy import asarray as ar,exp
 from scipy.interpolate import interp1d
 from operator import itemgetter
-sys.path.append('/Users/acharyya/Work/astro/mageproject/')
+import os
+HOME = os.getenv('HOME')
+import sys
+sys.path.append(HOME+'/Work/astro/ayan_codes/mageproject/')
 import jrr as j
 import warnings
 warnings.filterwarnings("ignore")
@@ -76,6 +78,21 @@ def readspec(inp, clean=True):
                     fl.append(float(t))
                     er.append(float(e))
     return wz, fl, er
+#-----------Inserting a line in a file----------------------------
+def insert_line_in_file(line, pos, filename, output=None):
+    f = open(filename, 'r')
+    contents = f.readlines()
+    f.close()
+    
+    if pos == -1: pos = len(contents) #to append to end of file
+    contents.insert(pos, line)
+    
+    if output is None: output = filename
+    f = open(output, 'w')
+    contents = ''.join(contents)
+    f.write(contents)
+    f.close()
+    return
 #-----------Reading input stacked mage spectra----------------------------
 def readstackedmagespec(inp):
     s = ascii.read(inp, comment="#")
@@ -128,6 +145,11 @@ def fixcont_gaus(x,cont,n,*p):
     result = cont
     for xx in range(0,n):
         result += p[3*xx+0]*exp(-((x-p[3*xx+1])**2)/(2*p[3*xx+2]**2))
+    return result
+def fixcont_fixgroupz_gaus(x,cont,n,obswave,zz,*p):
+    result = cont
+    for xx in range(0,n):
+        result += p[2*xx+1]*exp(-((x- obswave[xx]*(1.+p[0])/(1.+zz[xx]) )**2)/(2*p[2*xx+2]**2))
     return result
 def fixcen_gaus(x,list_of_cen,*p):
     result = p[0]
