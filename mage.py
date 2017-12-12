@@ -279,6 +279,16 @@ def calc_schneider_EW(sp, resoln, plotit = False):
 #-------------Fucntion for updating popt, pcov when some parameters are fixed----------------------------
 #-------------so that eventually update_dataframe() gets popt, pcov of usual shape----------------------------
 def update_p(popt, pcov, pos, n, popt_insert, pcov_insert, extend=False):
+    '''
+    This function is to generalise the shape of the output parameter array.
+    For e.g. if we were fitting all 4 (continuum, height, width, center) gaussian parameters, for N lines
+    our popt array would be a 1D array of length 4xN and pcov would be of shape 4Nx4N.
+    But in this case we keep the continuum fixed=1, so popt is of length 1 + 3xN and pcov is of shape (1+3N)x(1+3N)
+    In order to generalize the output array shape (the user may not always ask for continuum to be fixed, but returning
+    arrays if different shape for different cases makes it difficult to implement other parts of the code) we have to
+    force it to become of length 4N. We do it by inserting the value of continuum after every 3rd element in the popt array
+    and similarly for pcov array. This is less trivial than it sounds.
+    '''
     if extend: n -= 1
     for yy in range(0, n):
         if extend:
@@ -311,6 +321,15 @@ def isdetect(EW_signi, f_signi, f_SNR, EW_thresh=None, f_thresh=None, f_SNR_thre
 
 #-------------Fucntion for fitting any number of Gaussians----------------------------
 def fit(sptemp, l, resoln, dresoln, args):
+    '''
+    This function fits multiple Gaussian profiles to a group of *neighbouring* lines simultaneously
+    INPUTS:
+    sptemp: pandas dataframe (can be thought of as a python object) containing the input spectra i.e. wavelength, flambda, flambda uncertainty
+    l: pandas dataframe containing lines to be fit, includes info about vacuum line centers, initial guess of redshift, line type (emission/absorption)
+    resoln: resolution of spectra R=lambda/delta_lambda
+    dresoln: uncertainty in the above quantity
+    args: keyword arguments to give user the control to choose from options e.g. what kind of fit, how much vel width to allow for, etc.
+    '''
     global line_type_dic
     types=[]
     for v in l.type.values:
@@ -332,25 +351,27 @@ def fit(sptemp, l, resoln, dresoln, args):
             #-----if redshift of a group of lines is to be fixed----------
             p_init, lbound, ubound =[l.zz.values[0]],[0.],[np.inf]
             cont = 1.
-            for xx in range(0, len(l)):
+            for xx in range(0, len(l)): #iterating on number of lines to be fit in the input chunk of spectra
                 if 'Ly-alpha' in l.label.values[xx]:
                     zz_allow = (2000./3e5)*(1 + l.zz.values[xx]) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 2000 km/s) if the line to be fit is Ly-alpha
                 elif 'MgII' in l.label.values[xx]:
                     zz_allow = (300./3e5)*(1 + l.zz.values[xx]) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 300 km/s) if the line to be fit is MgII2797 lines, due to wind
                 else:
-                     zz_allow = 3.*l.zz_err.values[xx]
-                if args.debug: print 'Deb340:', l.label.values[xx], zz_allow #
-                fl = sptemp[sptemp['wave']>=l.wave.values[xx]].flam.values[0]-cont
+                     zz_allow = 3.*l.zz_err.values[xx] #for all other lines, allowing the fitted redshift to vary within 3sigma error of the input initial guess of redshift
+                if args.debug: print 'Deb340:', l.label.values[xx], zz_allow #args.debug = debugging statements, ignore these henceforth
+                fl = sptemp[sptemp['wave']>=l.wave.values[xx]].flam.values[0]-cont #initial guess of the height of the gaussian = flambda value at the line center - continuum (cont)
         
-                p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])])#2.*gf2s/resoln])
-                lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
-                ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*args.v_maxwidth *gf2s/3e5])
+                p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])]) #initial guess for each line
+                lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)]) #lower bounds of parameters for each line
+                ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*args.v_maxwidth *gf2s/3e5]) #upper bounds of parameters for each line
                 if args.debug:
                     print 'Deb345: rest frame', l.label.values[xx], l.wave.values[xx]/(1+l.zz.values[xx]), lbound[1+3*xx]/(1+l.zz.values[xx]), ubound[1+3*xx]/(1+l.zz.values[xx]) #
                     print 'Deb346: obs frame', l.label.values[xx], l.wave.values[xx], lbound[1+3*xx], ubound[1+3*xx] #
             popt, pcov = curve_fit(lambda x, *p: s.fixcont_fixgroupz_gaus(x, cont, len(l), l.wave.values, l.zz.values, *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound), maxfev=1500) #to fix redshift for each group
+            #popt contains the best fit parameters, pcov is covariance matrix, used to estimate uncertainties in fitted parameters
             if args.debug: print 'Deb348:', 'RMS=', np.sqrt(np.sum((s.fixcont_fixgroupz_gaus(sptemp.wave, cont, len(l), l.wave.values, l.zz.values, *popt) - sptemp.flam)**2)/len(sptemp)) #
-
+            
+            #-----The following section does something similar to update_popt() function. Refer to that for documentation
             popt[0], popt[1] = popt[1], popt[0] #swapping 1st and 2nd element to preserve order: flux1, redshift, sigma1, flux2, sigma2, .... 
             pcov[[0,1]] = pcov[[1,0]]
             pcov[:,[0,1]] = pcov[:,[1,0]]
@@ -362,30 +383,32 @@ def fit(sptemp, l, resoln, dresoln, args):
             popt[1] = l.wave.values[0]*(1.+popt[1])/(1.+l.zz.values[0]) #because first one is 'modified', no need to 'insert', the subsequent ones need to be inserted
             pcov [:,1] = l.wave.values[0]*pcov[:,1]/(1.+l.zz.values[0])
             pcov [1] = l.wave.values[0]*pcov[1]/(1.+l.zz.values[0])
+            #------------------------------------------------------------------------
         else:
-            #-----else----------    
+            #-----else i.e. letting redshift of each line vary independently of another's----------    
             p_init, lbound, ubound =[],[],[]
             cont = 1.
-            for xx in range(0, len(l)):
+            for xx in range(0, len(l)): #iterating on number of lines to be fit in the input chunk of spectra
                 if 'Ly-alpha' in l.label.values[xx]:
                     zz_allow = (2000./3e5)*(1 + l.zz.values[xx]) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 2000 km/s) if the line to be fit is Ly-alpha
                 elif 'MgII' in l.label.values[xx]:
                     zz_allow = (300./3e5)*(1 + l.zz.values[xx]) + 3.*l.zz_err.values[xx] # increasing allowance of z (by 300 km/s) if the line to be fit is MgII2797 lines, due to wind
                 else:
-                     zz_allow = 3.*l.zz_err.values[xx]
+                     zz_allow = 3.*l.zz_err.values[xx] #for all other lines, allowing the fitted redshift to vary within 3sigma error of the input initial guess of redshift
                 if args.debug: print 'Deb340:', l.label.values[xx], zz_allow #
-                fl = sptemp[sptemp['wave']>=l.wave.values[xx]].flam.values[0]-cont
-                p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])])#2.*gf2s/resoln])
-                lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
-                ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*(1.+zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*args.v_maxwidth *gf2s/3e5])
+                fl = sptemp[sptemp['wave']>=l.wave.values[xx]].flam.values[0]-cont #initial guess of the height of the gaussian = flambda value at the line center - continuum (cont)
+                p_init = np.append(p_init, [np.abs(fl)*types[xx], l.wave.values[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])]) #initial guess for each line
+                lbound = np.append(lbound,[-np.inf if float(types[xx] < 0) else 0.,l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)]) #lower bounds of parameters for each line
+                ubound = np.append(ubound,[np.inf if float(types[xx] > 0) else 0.,l.wave.values[xx]*(1.+zz_allow/(1.+l.zz.values[xx])),l.wave.values[xx]*args.v_maxwidth *gf2s/3e5]) #upper bounds of parameters for each line
                 if args.debug:
                     print 'Deb345: rest frame', l.label.values[xx], l.wave.values[xx]/(1+l.zz.values[xx]), lbound[1+3*xx]/(1+l.zz.values[xx]), ubound[1+3*xx]/(1+l.zz.values[xx]) #
                     print 'Deb346: obs frame', l.label.values[xx], l.wave.values[xx], lbound[1+3*xx], ubound[1+3*xx] #
 
-            popt, pcov = curve_fit(lambda x, *p: s.fixcont_gaus(x, cont, len(l), *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
+            popt, pcov = curve_fit(lambda x, *p: s.fixcont_gaus(x, cont, len(l), *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound)) #actual fitting part
+            #popt contains the best fit parameters, pcov is covariance matrix, used to estimate uncertainties in fitted parameters
             if args.debug: print 'Deb348:', 'RMS=', np.sqrt(np.sum((s.fixcont_gaus(sptemp.wave, cont, len(l), *popt) - sptemp.flam)**2)/len(sptemp)) #
             #----------------------------------------------------
-        popt, pcov = update_p(popt, pcov, 0, len(l), cont, 0.)
+        popt, pcov = update_p(popt, pcov, 0, len(l), cont, 0.) #to generalise output array shape
     #fitting all 4 parameters, nothing fixed
     else:
         p_init, lbound, ubound = [ly[0]],[-np.inf],[np.inf]
@@ -429,21 +452,20 @@ def fit_CII2323_group(sptemp, l, resoln, dresoln, args):
     #fitting 1 parameters for flux (and scaling the rest), 1 parameter for redshift and \
     #1 parameter each for line widths, keeping continuum
     if args.fix_cont:
-        cont = 1.
-        norm_ind = np.where(l.label.values == 'CII2325c')[0][0] #index of the line with respect to which ratios have been normalized
-        fl = sptemp[sptemp['wave']>=l.wave.values[norm_ind]].flam.values[0]-cont
-        p_init, lbound, ubound, ratios =[fl,l.zz.values[0]],[0.,0.],[np.inf,np.inf],[]
-        for xx in range(len(l)):
-            zz_allow = 3.*l.zz_err.values[xx]
-            ratios.append(ratio_dict[l.label.values[xx]])
-            p_init = np.append(p_init, [l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])])#2.*gf2s/resoln])
-            lbound = np.append(lbound,[l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
-            ubound = np.append(ubound,[l.wave.values[xx]*args.v_maxwidth *gf2s/3e5])
-
-        if args.fixgroupz: popt, pcov = curve_fit(lambda x, *p: n_fixcont_fixgroupz_gaus(x, cont, len(l), ratios, l.wave.values, l.zz.values, *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
-        else: popt, pcov = curve_fit(lambda x, *p: n_fixcont_fixgroupz_gaus(x, cont, len(l), ratios, l.wave.values, l.zz.values, *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
-        
         if args.fixgroupz:
+            cont = 1.
+            norm_ind = np.where(l.label.values == 'CII2325c')[0][0] #index of the line with respect to which ratios have been normalized
+            fl = sptemp[sptemp['wave']>=l.wave.values[norm_ind]].flam.values[0]-cont
+            p_init, lbound, ubound, ratios =[fl,l.zz.values[0]],[0.,0.],[np.inf,np.inf],[]
+            for xx in range(len(l)):
+                zz_allow = 3.*l.zz_err.values[xx]
+                ratios.append(ratio_dict[l.label.values[xx]])
+                p_init = np.append(p_init, [l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth *gf2s/3e5])])#2.*gf2s/resoln])
+                lbound = np.append(lbound,[l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
+                ubound = np.append(ubound,[l.wave.values[xx]*args.v_maxwidth *gf2s/3e5])
+
+            popt, pcov = curve_fit(lambda x, *p: n_fixcont_fixgroupz_gaus(x, cont, len(l), ratios, l.wave.values, l.zz.values, *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
+        
             #----to account for redshifts--------
             for yy in range(1,len(l)):
                 popt = np.insert(popt,1+2*yy,l.wave.values[yy]*(1.+popt[1])/(1.+l.zz.values[xx]))
@@ -452,7 +474,20 @@ def fit_CII2323_group(sptemp, l, resoln, dresoln, args):
             popt[1] = l.wave.values[0]*(1.+popt[1])/(1.+l.zz.values[0]) #because first one is 'modified', no need to 'insert', the subsequent ones need to be inserted
             pcov [:,1] = l.wave.values[0]*pcov[:,1]/(1.+l.zz.values[0])
             pcov [1] = l.wave.values[0]*pcov[1]/(1.+l.zz.values[0])
+        else:
+            cont = 1.
+            norm_ind = np.where(l.label.values == 'CII2325c')[0][0] #index of the line with respect to which ratios have been normalized
+            fl = sptemp[sptemp['wave']>=l.wave.values[norm_ind]].flam.values[0]-cont
+            p_init, lbound, ubound, ratios =[fl],[0.],[np.inf],[]
+            for xx in range(len(l)):
+                zz_allow = 3.*l.zz_err.values[xx]
+                ratios.append(ratio_dict[l.label.values[xx]])
+                p_init = np.append(p_init, [l.wave.values[xx], l.wave.values[xx]*np.mean([1.*gf2s/(resoln-3.*dresoln), args.v_maxwidth*gf2s/3e5])])#2.*gf2s/resoln])
+                lbound = np.append(lbound,[l.wave.values[xx]*(1.-zz_allow/(1.+l.zz.values[xx])), l.wave.values[xx]*1.*gf2s/(resoln+3.*dresoln)])
+                ubound = np.append(ubound,[l.wave.values[xx]*(1.+zz_allow/(1.+l.zz.values[xx])), l.wave.values[xx]*args.v_maxwidth*gf2s/3e5])
 
+            popt, pcov = curve_fit(lambda x, *p: n_fixcont_gaus(x, cont, len(l), ratios, *p),sptemp['wave'],sptemp['flam'], p0 = p_init, sigma = sptemp['flam_u'], absolute_sigma = True, bounds = (lbound, ubound))
+       
         #----to account for flux ratios--------
         popt[0] *= ratios[0] #because we will be dividing by ratios[0] later
         pcov [:,0] *= ratios[0]
@@ -534,6 +569,45 @@ def plot_gaus(sptemp, popt, cen, label, zz, tot_fl, args, detection=True):
     else: tot_fl += gauss_curve_nu
     return tot_fl
 
+#---------returns a line flux value based on atomic line ratios and other detected lines of same species-------
+def get_flux_from_atomic(line_table, labelcol='line_label', fluxcol='flux', fluxucol='flux_u', wavecol='rest_wave', dered_fluxcol='flux_dered', dered_fluxucol='flux_redcor_u', notescol='Notes', bad_value='-'):
+    atomic_ratio_lines = {'OIII1660':'OIII1666', 'NII6549':'NII6584'}
+    ratios = {'OIII1660/OIII1666': 0.34147, 'NII6549/NII6584': 0.339878}
+    rest_waves = {'OIII1660':1660.809, 'NII6549':6549.861}
+    #---to replace bad/non detections based on ratio----------
+    bad_lines = line_table[line_table[fluxucol] == bad_value].reset_index(drop=True) #lines with upper limits
+    good_lines = line_table[line_table[fluxucol] != bad_value].reset_index(drop=True) #all the rest
+    #print 'Trying to replace undetected line fluxes based on ratios from atomic physics..'
+    #print str(len(bad_lines))+' bad lines found, out of which '+str(np.sum([bad_lines[labelcol].values[ind] in atomic_ratio_lines for ind in range(len(bad_lines))]))+' can be replaced (are in the replace-list).'    
+    for i in range(len(bad_lines)):
+        thislabel = bad_lines.loc[i][labelcol]
+        if thislabel in atomic_ratio_lines:
+            partner_line_label = atomic_ratio_lines[thislabel]
+            partner_line_u = line_table[line_table[labelcol] == partner_line_label][fluxucol].values[0]
+            if partner_line_u != '-':
+                bad_lines.ix[i, fluxcol] = '%.2F'%(ratios[thislabel+'/'+partner_line_label]*float(line_table[line_table[labelcol] == partner_line_label][fluxcol].values[0]))
+                bad_lines.ix[i, fluxucol] = '%.2F'%(ratios[thislabel+'/'+partner_line_label]*float(partner_line_u))
+                if dered_fluxcol in line_table:
+                    bad_lines.ix[i, dered_fluxcol] = '%.2F'%(ratios[thislabel+'/'+partner_line_label]*float(line_table[line_table[labelcol] == partner_line_label][dered_fluxcol].values[0]))
+                    bad_lines.ix[i, dered_fluxucol] = '%.2F'%(ratios[thislabel+'/'+partner_line_label]*float(line_table[line_table[labelcol] == partner_line_label][dered_fluxucol].values[0]))
+                if notescol in line_table: bad_lines.ix[i, notescol] = 'Tied~to~'+partner_line_label+'~by~atomic~ratio'
+                print thislabel, 'tied to', partner_line_label, 'by atomic ratio'
+    line_table = pd.concat([good_lines, bad_lines], ignore_index=True).sort_values(wavecol).reset_index(drop=True)
+    #------to add to the table in case it wasn't present in the first place--
+    
+    for thislabel in atomic_ratio_lines:
+        if thislabel not in line_table[labelcol].values and atomic_ratio_lines[thislabel] in line_table[labelcol].values:
+            index = line_table[labelcol] == atomic_ratio_lines[thislabel]
+            ratio = ratios[thislabel+'/'+atomic_ratio_lines[thislabel]]
+            row = {labelcol:thislabel, wavecol:rest_waves[thislabel], fluxcol: ratio*line_table[index][fluxcol].values[0], fluxucol:\
+            ratio*line_table[index][fluxucol].values[0]}
+            if dered_fluxcol in line_table:
+                row[dered_fluxcol] = ratio*line_table[index][dered_fluxcol].values[0]
+                row[dered_fluxucol] = ratio*line_table[index][dered_fluxucol].values[0]
+            line_table = line_table.append(row, ignore_index=True)
+            print thislabel, 'tied to', atomic_ratio_lines[thislabel], 'by atomic ratio'
+    return line_table
+
 #-------Functions to correct for extinction for rcs0327-E ONLY-------------
 '''
 #----From http://webast.ast.obs-mip.fr/hyperz/hyperz_manual1/node10.html website using Calzetti 2000 law----
@@ -589,8 +663,13 @@ def kappa(x, i):
     return a*Rv + b
 #------------------calculate kappa for full wavelength range-----
 def getfullkappa(wave, inAngstrom=True):
+    flag = 0
+    if type(wave) in [float, int, np.float64]:
+        wave = [float(wave)]
+        flag = 1
+    wave = np.array(wave)
     if inAngstrom: wave/=1e4 #to convert to micron
-    x = 1./np.array(wave)
+    x = 1./wave
     Rv = 3.1 
     k = np.zeros(len(x))
     k += kappa(x,1) * ((x >= 0.3) & (x <= 1.1))
@@ -598,6 +677,7 @@ def getfullkappa(wave, inAngstrom=True):
     k += kappa(x,3) * ((x > 3.3) & (x < 5.9))
     k += kappa(x,4) * ((x >= 5.9) & (x <= 8.))
     k += kappa(x,5) * ((x >= 8.) & (x <= 10.))
+    if flag: k=k[0] #if a single wavelength was input as a float, output a float (not array)
     return k
 #------------------Function to calculate extinction and de-redden fluxes-------------
 def extinct(wave, flux, flux_u, E, E_u, inAngstrom=True, doMC=True, size=1000):
